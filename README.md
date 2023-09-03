@@ -8,7 +8,7 @@ I wrote the code for my Slide2 7-UP pellet stove, but actually all stoves from E
 
 If you want to try the code, you should include the code as Visual-Studio Code Platform-IO-Project via the Github URL. 
 
-Afterwards you have to adjust the WLAN settings and the MQTT connection in the main.cpp.
+Afterwards you have to adjust the WLAN settings and the MQTT connection in the main.cpp. Don't forget to change the platform.io file and edit your ESP32 board here.
 
 Once you have compiled the code and put it on your ESP32 board, the rest should work automatically. The ESP will search for the pellet stove via the corresponding Bluetooth characteristics and automatically add it to Home-Assistant via the MQTT discovery function.
 
