@@ -24,24 +24,25 @@ Here is an example of a packet sent from the phone to the stove:
 
 <img src="./images/Write.png" alt="Write" title="Write" width="300">
 
-Service-UUID is "abf0", the phone sends write-commands to UUID "abf1", the response form the stove comes in at UUID "abf2".
+Service-UUID is "abf0", the phone sends write-commands to UUID "abf1", the response from the stove comes in at UUID "abf2".
 
-This is an response from the oven to the phone:
+This is an response from the stove to the phone:
 
 <img src="./images/Response.png" alt="Write" title="Write" width="300">
 
 As you can see the payload is always 32 bit long. The payload is AES encrypted. 
+
 The decrypted payload looks like this (write from phone to stove):
 
 <img src="./images/Write-payload.png" alt="Write" title="Write" width="300">
 
-The first 4 bytes is the actual timestamp. The next 16 Bytes is a static-key which never changes. The next 6 Bytes is the "real" payload - these are modbus-commands. Followed by 2 bytes CRC and 4 bytes padding (0x04).
+The first 4 bytes is the actual timestamp. The next 16 Bytes is a static-key which never changes. The next 6 Bytes is the "real" payload - these are modbus-commands. Followed by 2 bytes CRC (0x84 0x41) and 4 bytes padding (0x04).
 
 The response from the oven looks like this:
 
 <img src="./images/Response-payload.png" alt="Write" title="Write" width="300">
 
-First 4 bytes is the timestamp, followed by the 16 bytes "static key". The next 7 bytes are the "real" modbus-response, followed by 2 bytes CRC (fa 1b) and 3 bytes padding (0x03). CRC is CRC16-Modbus.
+First 4 bytes is the timestamp, followed by the 16 bytes "static key". The next 7 bytes are the "real" modbus-response, followed by 2 bytes CRC (0xfa 0x1b) and 3 bytes padding (0x03). CRC is CRC16-Modbus.
 
 
 
