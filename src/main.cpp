@@ -6,15 +6,15 @@
 
 /* WLAN-Setup */
 
-const char *hostname  PROGMEM = "edilkaminble";
-const char *ssid PROGMEM = "*******";
-const char *password PROGMEM = "********";
+const char *hostname PROGMEM = "edilkaminble";
+const char *ssid PROGMEM = WLAN_SSID;
+const char *password PROGMEM = WLAN_PASSWORD;
 
 /* MQTT Setup*/
 
-const char *mqttHost PROGMEM = "192.168.1.1";
-const char *mqttUser PROGMEM = "***";
-const char *mqttPass PROGMEM = "***";
+const char *mqttHost PROGMEM = MQTT_HOST;
+const char *mqttUser PROGMEM = MQTT_USER;
+const char *mqttPass PROGMEM = MQTT_PASSWORD;
 
 enum states
 {
@@ -730,8 +730,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
 void initWiFi()
 {
-  WiFi.mode(WIFI_STA);
   WiFi.setHostname(hostname);
+  WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
   WiFi.begin(ssid, password);
@@ -741,7 +741,9 @@ void initWiFi()
     Serial.print('.');
     delay(1000);
   }
-  Serial.println(WiFi.localIP());
+  Serial.print(WiFi.localIP());
+  Serial.print(", ");
+  Serial.println(WiFi.getHostname());
 }
 
 void setup()
