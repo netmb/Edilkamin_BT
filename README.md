@@ -23,13 +23,13 @@ I have no idea if this works on your pellet stoves right away, because I could o
 
 Here is an example of a packet sent from the phone to the stove:
 
-<img src="./images/write.png" alt="Write" title="Write" width="300">
+<img src="./images/Write.png" alt="Write" title="Write" width="300">
 
 Service-UUID is "abf0", the phone sends write-commands to UUID "abf1", the response from the stove comes in at UUID "abf2".
 
 This is an response from the stove to the phone:
 
-<img src="./images/response.png" alt="Write" title="Write" width="300">
+<img src="./images/Response.png" alt="Write" title="Write" width="300">
 
 As you can see the payload is always 32 bit long. The payload is AES encrypted. 
 
