@@ -43,10 +43,13 @@ static BLERemoteCharacteristic *pRemoteCharacteristicWrite;
 static BLERemoteCharacteristic *pRemoteCharacteristicRead;
 static BLEAdvertisedDevice *myDevice;
 static BLEClient *pClient;
+unsigned long currentMillis = 0;
 unsigned long previousMillis = 0;
+unsigned long previousMillisConnect = 0;
 unsigned long writeTimestamp = 0;
 const long queryInterval = 1000;
 const long responseTimeout = 1000;
+const long connectTimeout = 30000;
 
 struct btWriteMapping
 {
@@ -603,37 +606,38 @@ void mqttCallback(String topic, byte *message, unsigned int length)
 void mqttReconnect()
 {
   // Loop until we're reconnected
-  while (!mqttClient.connected())
+  // while (!mqttClient.connected())
+  //{
+
+  Serial.print(F("Attempting MQTT connection..."));
+  if (mqttClient.connect(hostname, mqttUser, mqttPass))
   {
-    Serial.print(F("Attempting MQTT connection..."));
-    if (mqttClient.connect(hostname, mqttUser, mqttPass))
-    {
-      Serial.println(F("connected"));
-      mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
-      mqttClient.subscribe("edilkamin/322707E4/hvac_mode/set", true);
-      mqttClient.subscribe("edilkamin/322707E4/preset_mode/set", true);
-      mqttClient.subscribe("edilkamin/322707E4/target_temperature/set", true);
-      mqttClient.subscribe("edilkamin/322707E4/relax/set", true);
-      // mqttClient.subscribe("edilkamin/322707E4/airkare/set");
-      mqttClient.subscribe("edilkamin/322707E4/chrono_mode/set", true);
-      mqttClient.subscribe("edilkamin/322707E4/standby/set", true);
-      mqttClient.subscribe("edilkamin/322707E4/bluetooth/set", true);
-      Serial.println("publishing Autodiscover Config to HA...");
-      mqttClient.publish("homeassistant/climate/edilkamin_322707E4/config", h.jsonAutodiscover, true);
-      mqttClient.publish("homeassistant/switch/edilkamin_322707E4_relax/config", h.jsonAutodiscoverRelax, true);
-      // mqttClient.publish("homeassistant/switch/edilkamin_322707E4_airkare/config", h.jsonAutodiscoverAirkare);
-      mqttClient.publish("homeassistant/switch/edilkamin_322707E4_chrono_mode/config", h.jsonAutodiscoverCronoMode, true);
-      mqttClient.publish("homeassistant/switch/edilkamin_322707E4_standby/config", h.jsonAutodiscoverStandbyMode, true);
-      mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_status/config", h.jsonAutodiscoverStatus, true);
-      mqttClient.publish("homeassistant/switch/edilkamin_322707E4_bluetooth/config", h.jsonAutodiscoverBluetooth, true);
-      mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_thermocouple_temp/config", h.jsonAutodiscoverThermocouple, true);
-    }
-    else
-    {
-      Serial.print(F("failed, rc="));
-      Serial.print(mqttClient.state());
-    }
+    Serial.println(F("connected"));
+    mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/hvac_mode/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/preset_mode/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/target_temperature/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/relax/set", true);
+    // mqttClient.subscribe("edilkamin/322707E4/airkare/set");
+    mqttClient.subscribe("edilkamin/322707E4/chrono_mode/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/standby/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/bluetooth/set", true);
+    Serial.println("publishing Autodiscover Config to HA...");
+    mqttClient.publish("homeassistant/climate/edilkamin_322707E4/config", h.jsonAutodiscover, true);
+    mqttClient.publish("homeassistant/switch/edilkamin_322707E4_relax/config", h.jsonAutodiscoverRelax, true);
+    // mqttClient.publish("homeassistant/switch/edilkamin_322707E4_airkare/config", h.jsonAutodiscoverAirkare);
+    mqttClient.publish("homeassistant/switch/edilkamin_322707E4_chrono_mode/config", h.jsonAutodiscoverCronoMode, true);
+    mqttClient.publish("homeassistant/switch/edilkamin_322707E4_standby/config", h.jsonAutodiscoverStandbyMode, true);
+    mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_status/config", h.jsonAutodiscoverStatus, true);
+    mqttClient.publish("homeassistant/switch/edilkamin_322707E4_bluetooth/config", h.jsonAutodiscoverBluetooth, true);
+    mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_thermocouple_temp/config", h.jsonAutodiscoverThermocouple, true);
   }
+  else
+  {
+    Serial.print(F("failed, rc="));
+    Serial.print(mqttClient.state());
+  }
+  //}
 }
 
 static void bleNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, uint8_t *pData, size_t length, bool isNotify)
@@ -765,13 +769,18 @@ void setup()
 
 void loop()
 {
-  if (!mqttClient.connected())
+  currentMillis = millis();
+  if (!mqttClient.loop() || !mqttClient.connected())
   {
     mqttReconnect();
+    if (currentMillis - previousMillisConnect >= connectTimeout)
+    {
+      previousMillisConnect = currentMillis;
+      ESP.restart();
+    }
   }
-  if (!mqttClient.loop())
-  {
-    mqttClient.connect(hostname, mqttUser, mqttPass);
+  else {
+    previousMillisConnect = currentMillis;
   }
 
   if (bleDoConnect == true)
@@ -804,7 +813,6 @@ void loop()
 
   if (bleConnected)
   {
-    unsigned long currentMillis = millis();
     switch (status)
     {
     case START:
