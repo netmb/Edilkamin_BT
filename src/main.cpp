@@ -7,14 +7,6 @@
 /* WLAN-Setup */
 
 const char *hostname PROGMEM = "edilkaminble";
-const char *ssid PROGMEM = WLAN_SSID;
-const char *password PROGMEM = WLAN_PASSWORD;
-
-/* MQTT Setup*/
-
-const char *mqttHost PROGMEM = MQTT_HOST;
-const char *mqttUser PROGMEM = MQTT_USER;
-const char *mqttPass PROGMEM = MQTT_PASSWORD;
 
 enum states
 {
@@ -610,7 +602,7 @@ void mqttReconnect()
   //{
 
   Serial.print(F("Attempting MQTT connection..."));
-  if (mqttClient.connect(hostname, mqttUser, mqttPass))
+  if (mqttClient.connect(hostname, MQTT_USER, MQTT_PASSWORD))
   {
     Serial.println(F("connected"));
     mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
@@ -738,7 +730,7 @@ void initWiFi()
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
-  WiFi.begin(ssid, password);
+  WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
   Serial.print(F("Connecting to WiFi .."));
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -755,7 +747,7 @@ void setup()
   Serial.begin(9600);
   initWiFi();
   h.getNtpTime();
-  mqttClient.setServer(mqttHost, 1883);
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(2048);
   mqttClient.setCallback(mqttCallback);
   BLEDevice::init("");

@@ -70,8 +70,8 @@ void Helper::getNtpTime() {
   Serial.println("Fetching time from NTP...");
   time_t now;
   struct tm new_ts;
-  const char* ntpServer = "pool.ntp.org";
-  const long  gmtOffset_sec = 7200; //Berlin
+  const char* ntpServer = NTP_SERVER;
+  const long  gmtOffset_sec = NTP_GMT_OFFSET; 
   const int   daylightOffset_sec = 0;
 
   //Config time using NTP
