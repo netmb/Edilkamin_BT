@@ -308,9 +308,9 @@ void processBtResponseData(byte *btData)
     else if (currentOp == Helper::READ_THERMOCOUPLE_TEMP)
     {
       uint16_t r = (d.payload[3] << 8) + d.payload[4];
-      float x = r * 0.1;
+      r = (r*0.1) + 0.5;
       char msg_out[10];
-      dtostrf(x, 2, 1, msg_out);
+      itoa(r, msg_out, 10);
       mqttClient.publish("edilkamin/322707E4/thermocouple_temperature/state", msg_out);
     }
     else if (currentOp == Helper::READ_TEMPERATURE)
