@@ -86,11 +86,13 @@ const queryLookup queryQueue[] = {
     {Helper::READ_RELAX, h.readRelax},
     {Helper::READ_FIREPLACE_CURRENT_POWER, h.readFireplaceCurrentPower},
     {Helper::READ_PELLET_SENSOR, h.readPelletSensor},
-    {Helper::READ_PELLET_REMAINING, h.readPelletRemaining},
+    //{Helper::READ_PELLET_REMAINING, h.readPelletRemaining},
     {Helper::READ_ECO_TEMP, h.readEconomyTemperature},
     {Helper::READ_COMFORT_TEMP, h.readComfortTemperature},
     {Helper::READ_FIREPLACE_MAIN_STATUS, h.readFireplaceMainStatus},
-    {Helper::READ_STANDBY_STATUS, h.readStandbyStatus}};
+    {Helper::READ_STANDBY_STATUS, h.readStandbyStatus},
+    {Helper::READ_WARNING_FLAGS, h.readWarningFlags}
+    };
 
 bool automatic = false;
 
@@ -385,6 +387,13 @@ void processBtResponseData(byte *btData)
       else
         mqttClient.publish("edilkamin/322707E4/status/state", "-");
     }
+    else if(currentOp == Helper::READ_WARNING_FLAGS)
+    {
+      if (d.payload[4] == 0) //Pellet ok
+        mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Ok");
+      else if(d.payload[4] == 4) //Pellet low
+        mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Empty");
+    }
   }
 }
 
@@ -623,6 +632,7 @@ void mqttReconnect()
     mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_status/config", h.jsonAutodiscoverStatus, true);
     mqttClient.publish("homeassistant/switch/edilkamin_322707E4_bluetooth/config", h.jsonAutodiscoverBluetooth, true);
     mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_thermocouple_temp/config", h.jsonAutodiscoverThermocouple, true);
+    mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_pellet_level/config", h.jsonAutodiscoverPelletLevel, true);
   }
   else
   {
