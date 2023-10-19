@@ -15,7 +15,7 @@ The ESP will search for the pellet stove via the corresponding Bluetooth charact
 
 ## Current limitations:
 
-Currently only fan 1 can be changed, because my Slide2 does not have more fans. Some special functions like Chrono-timer and Pelletsensor are missing, cause i cant find the necessary codes for this.
+Currently only fan 1 can be changed, because my Slide2 does not have more fans. Some special functions like Chrono-timer are missing, cause i cant find the necessary codes for this.
 
 I have no idea if this works on your pellet stoves right away, because I could only try it on my stove here. I'm looking forward to your feedback.
 
