@@ -39,9 +39,12 @@ unsigned long currentMillis = 0;
 unsigned long previousMillis = 0;
 unsigned long previousMillisConnect = 0;
 unsigned long writeTimestamp = 0;
-const long queryInterval = 1000;
+const long queryInterval = 2000;
 const long responseTimeout = 1000;
 const long connectTimeout = 30000;
+byte currentFan1Level = 0;
+byte currentPowerLevel = 0;
+bool automatic = false;
 
 struct btWriteMapping
 {
@@ -73,7 +76,7 @@ struct queryLookup
   const byte *cmd;
 };
 uint8_t queryIndex = 0;
-const uint8_t queryQueueElements = 16;
+const uint8_t queryQueueElements = 11;
 const queryLookup queryQueue[] = {
     {Helper::READ_POWER, h.readPower},
     {Helper::READ_AUTOMATIC, h.readAutomatic},
@@ -81,20 +84,20 @@ const queryLookup queryQueue[] = {
     {Helper::READ_MAIN_ENV_TEMP, h.readMainEnvTemp},
     {Helper::READ_THERMOCOUPLE_TEMP, h.readThermocoupleTemperature},
     {Helper::READ_TEMPERATURE, h.readTemperature},
-    {Helper::READ_FAN_MACHINE, h.readFanMachine},
+    //{Helper::READ_FAN_MACHINE, h.readFanMachine},
     {Helper::READ_FAN, h.readFan},
     {Helper::READ_RELAX, h.readRelax},
-    {Helper::READ_FIREPLACE_CURRENT_POWER, h.readFireplaceCurrentPower},
-    {Helper::READ_PELLET_SENSOR, h.readPelletSensor},
+    //{Helper::READ_FIREPLACE_CURRENT_POWER, h.readFireplaceCurrentPower},
+    //{Helper::READ_PELLET_SENSOR, h.readPelletSensor},
     //{Helper::READ_PELLET_REMAINING, h.readPelletRemaining},
-    {Helper::READ_ECO_TEMP, h.readEconomyTemperature},
-    {Helper::READ_COMFORT_TEMP, h.readComfortTemperature},
+    //{Helper::READ_ECO_TEMP, h.readEconomyTemperature},
+    //{Helper::READ_COMFORT_TEMP, h.readComfortTemperature},
     {Helper::READ_FIREPLACE_MAIN_STATUS, h.readFireplaceMainStatus},
     {Helper::READ_STANDBY_STATUS, h.readStandbyStatus},
     {Helper::READ_WARNING_FLAGS, h.readWarningFlags}
     };
 
-bool automatic = false;
+
 
 void queueBtCommand(Helper::btCmds name, byte *cmd)
 {
@@ -104,7 +107,7 @@ void queueBtCommand(Helper::btCmds name, byte *cmd)
     {
       btWriteQueue[i].name = name;
       memcpy(btWriteQueue[i].cmd, cmd, 6);
-      Serial.print(F(",empty queue place found at:"));
+      Serial.print(F(", bluetooh command placed at queue-index:"));
       Serial.print(i);
       Serial.println();
       break;
@@ -115,7 +118,8 @@ void queueBtCommand(Helper::btCmds name, byte *cmd)
 void nextQuery()
 {
   byte btCmd[6];
-  Serial.print(F("nextQuery:"));
+  Serial.println("");
+  Serial.print(F("Next Query Command:"));
   Serial.print(queryQueue[queryIndex].name);
   Serial.print(F(",command:"));
   h.hexDebug((unsigned char *)queryQueue[queryIndex].cmd, 6);
@@ -144,34 +148,18 @@ bool writeQueueHasElements()
 
 void writeBtData()
 {
-  /*
-  Serial.println("--- Current Write Queue ---");
-  for (uint8_t i = 0 ; i < 10; i++) {
-    Serial.print("btCmdQueue:");
-    Serial.print(i);
-    Serial.print(",");
-    Serial.print(btWriteQueue[i].name);
-    Serial.print(",");
-    if (btWriteQueue[i].name != Helper::NO_CMD) {
-      h.hexDebug(btWriteQueue[i].cmd, 6);
-    }
-    Serial.println();
-  }
-  Serial.println("--- End Current Write Queue ---");
-  */
   for (uint8_t i = 0; i < btWriteQueueLength; i++)
   {
     if (btWriteQueue[i].name != Helper::NO_CMD)
     {
       currentOp = btWriteQueue[i].name;
-      Serial.print(F("writeBtData:"));
+      Serial.print(F("Write Bluetooth Command from queue-index:"));
       byte btPacket[32];
-      Serial.print(F("Index:"));
       Serial.print(i);
-      Serial.print(F(","));
-      Serial.print(F("CommandNameIndex:"));
+      Serial.print(F(", "));
+      Serial.print(F("command-number:"));
       Serial.print(currentOp);
-      Serial.print(",");
+      Serial.print(", command:");
       h.createBtPacket(btWriteQueue[i].cmd, 6, btPacket);
       h.hexDebug(btWriteQueue[i].cmd, 6);
       Serial.println();
@@ -183,17 +171,18 @@ void writeBtData()
 }
 void processBtResponseData(byte *btData)
 {
-  Serial.print(F("ProcessBtResponseData:"));
+  Serial.print(F("Received bluetooth data:"));
   Helper::structDatagram d;
   h.getBtContent(btData, 32, &d);
   h.hexDebug(d.payload, 6);
   Serial.println();
   if (d.payload[1] == 6)
   { // Set Response
-    Serial.print(F("SetResponse:"));
+    Serial.print(F("Received response from command-number (set):"));
     Serial.print(currentOp);
     Serial.print(";");
     h.hexDebug(d.payload, 6);
+    Serial.println("");
     if (currentOp == Helper::SET_ON_OFF)
     {
       if (d.payload[5] == 1)
@@ -208,33 +197,52 @@ void processBtResponseData(byte *btData)
       else if (d.payload[4] == 1 && d.payload[5] == 1)
         mqttClient.publish("edilkamin/322707E4/relax/state", "ON");
     }
-    else if (currentOp == Helper::SET_WRITE_NEW_POWER && automatic)
+    else if (currentOp == Helper::SET_WRITE_NEW_POWER && !automatic)
     {
-      if (d.payload[5] == 1)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
-      else if (d.payload[5] == 2)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
-      if (d.payload[5] == 3)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
-      if (d.payload[5] == 4)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
-      if (d.payload[5] == 5)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
+      currentFan1Level = d.payload[4];
+      currentPowerLevel = d.payload[5];
+      switch (d.payload[5]) {
+        case 1:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
+          break;
+        case 2:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
+          break;
+        case 3:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
+          break;
+        case 4:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
+          break;
+        case 5:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
+          break;
+      }
     }
     else if (currentOp == Helper::SET_FAN_1)
     {
-      if (d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
-      else if (d.payload[4] == 2)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
-      else if (d.payload[4] == 3)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
-      else if (d.payload[4] == 4)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
-      else if (d.payload[4] == 5)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
-      else if (d.payload[4] == 6)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
+      currentFan1Level = d.payload[4];
+      currentPowerLevel = d.payload[5];
+      switch(d.payload[4]) {
+        case 1:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
+          break;
+        case 2:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
+          break;
+        case 3:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
+          break;
+        case 4:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
+          break;
+        case 5:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
+          break;
+        case 6:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
+          break;          
+      }
     }
     else if (currentOp == Helper::SET_ON_OFF_CHRONO)
     {
@@ -252,11 +260,14 @@ void processBtResponseData(byte *btData)
     }
     else if (currentOp == Helper::SET_CHANGE_AUTO_SWITCH)
     {
-      if (d.payload[4] == 0)
+      if (d.payload[4] == 0) {
         automatic = false;
+        mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "OFF");
+      }
       else if (d.payload[4] == 1)
       {
         automatic = true;
+        mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "ON");
         mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Auto");
       }
     }
@@ -271,7 +282,7 @@ void processBtResponseData(byte *btData)
   }
   else if (d.payload[1] == 3)
   { // Query Response
-    Serial.print(F("Parsed Response:"));
+    Serial.print(F("Received response from command-number (query):"));
     Serial.print(currentOp);
     Serial.print(";");
     h.hexDebug(d.payload, 6);
@@ -281,23 +292,34 @@ void processBtResponseData(byte *btData)
       if (d.payload[3] == 1)
       {
         automatic = true;
+        mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "ON");
         mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Auto");
       }
-      else if (d.payload[3] == 0)
+      else if (d.payload[3] == 0) {
         automatic = false;
+        mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "OFF");
+      }
     }
     else if (currentOp == Helper::READ_POWER && !automatic)
     {
-      if (d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
-      else if (d.payload[4] == 2)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
-      else if (d.payload[4] == 3)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
-      else if (d.payload[4] == 4)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
-      else if (d.payload[4] == 5)
-        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
+      currentPowerLevel = d.payload[4];
+      switch (d.payload[4]) {
+        case 1:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
+          break;
+        case 2:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
+          break;
+        case 3:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
+          break;
+        case 4:
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
+          break;
+        case 5: 
+          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
+          break;
+      }
     }
     else if (currentOp == Helper::READ_MAIN_ENV_TEMP)
     {
@@ -325,18 +347,27 @@ void processBtResponseData(byte *btData)
     }
     else if (currentOp == Helper::READ_FAN)
     {
-      if (d.payload[3] == 1)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
-      else if (d.payload[3] == 2)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
-      else if (d.payload[3] == 3)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
-      else if (d.payload[3] == 4)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
-      else if (d.payload[3] == 5)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
-      else if (d.payload[3] == 6)
-        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
+      currentFan1Level = d.payload[3];
+      switch(d.payload[3]) {
+        case 1:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
+          break;
+        case 2:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
+          break;
+        case 3:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
+          break;
+        case 4:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
+          break;
+        case 5:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
+          break;
+        case 6:
+          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
+          break;
+      }
     }
     else if (currentOp == Helper::READ_RELAX)
     {
@@ -400,7 +431,8 @@ void processBtResponseData(byte *btData)
 // MQTT-Callback
 void mqttCallback(String topic, byte *message, unsigned int length)
 {
-  Serial.print(F("Message arrived on topic: "));
+  Serial.println("");
+  Serial.print(F("MQTT-Message arrived with topic: "));
   Serial.print(topic);
   Serial.print(F(". Message: "));
   String msg;
@@ -409,140 +441,73 @@ void mqttCallback(String topic, byte *message, unsigned int length)
     Serial.print((char)message[i]);
     msg += (char)message[i];
   }
-  Serial.println("");
+  //Serial.println("");
   byte btCmd[6];
   if (topic == "edilkamin/322707E4/bluetooth/set")
   {
     if (msg == "ON")
-    {
       doBtConnect = true;
-    }
     else if (msg == "OFF")
-    {
       doBtConnect = false;
-    }
   }
   else if (topic == "edilkamin/322707E4/hvac_mode/set")
   {
     memcpy(btCmd, h.setOnOff, 6);
     if (msg == "heat")
-    {
       btCmd[5] = 1;
-    }
     else if (msg == "off")
-    {
       btCmd[5] = 0;
-    }
     queueBtCommand(Helper::SET_ON_OFF, btCmd);
   }
-  else if (topic == "edilkamin/322707E4/fan_mode/set")
+  else if (topic == "edilkamin/322707E4/fan_mode/set"  && currentFan1Level != 0 && currentPowerLevel != 0) //ignore set command if fan & power-level is 0 (=boot)
   {
     byte btPacket[32];
+    memcpy(btCmd, h.setFan1, 6);
+    btCmd[5] = currentPowerLevel;
     if (msg == "20%")
-    {
-      memcpy(btCmd, h.setFan1, 6);
       btCmd[4] = 1;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_FAN_1, btCmd);
-    }
     else if (msg == "40%")
-    {
-      memcpy(btCmd, h.setFan1, 6);
       btCmd[4] = 2;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_FAN_1, btCmd);
-    }
     else if (msg == "60%")
-    {
-      memcpy(btCmd, h.setFan1, 6);
       btCmd[4] = 3;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_FAN_1, btCmd);
-    }
     else if (msg == "80%")
-    {
-      memcpy(btCmd, h.setFan1, 6);
       btCmd[4] = 4;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_FAN_1, btCmd);
-    }
     else if (msg == "100%")
-    {
-      memcpy(btCmd, h.setFan1, 6);
       btCmd[4] = 5;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_FAN_1, btCmd);
-    }
     else if (msg == "Auto")
-    {
-      memcpy(btCmd, h.setFan1, 6);
       btCmd[4] = 6;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_FAN_1, btCmd);
-    }
+    queueBtCommand(Helper::SET_FAN_1, btCmd);
   }
-  else if (topic == "edilkamin/322707E4/preset_mode/set")
+  else if (topic == "edilkamin/322707E4/automatic_mode/set") {
+    byte btPacket[32];
+    memcpy(btCmd, h.setChangeAutoSwitch, 6);
+    if (msg == "ON")
+      btCmd[4] = 1;
+    else if (msg == "OFF")
+      btCmd[4] = 0;
+    queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
+  }
+  else if (topic == "edilkamin/322707E4/preset_mode/set" && currentFan1Level != 0 && currentPowerLevel != 0) //ignore set command if fan & power-level is 0 (=boot)
   {
     byte btPacket[32];
-    if (msg == "Auto")
-    {
+    if (msg == "Auto") {
       memcpy(btCmd, h.setChangeAutoSwitch, 6);
       btCmd[4] = 1;
       queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
     }
-    else if (msg == "Man. P1")
-    {
-      memcpy(btCmd, h.setChangeAutoSwitch, 6);
-      btCmd[4] = 0;
-      queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
-
+    else {
       memcpy(btCmd, h.setWriteNewPower, 6);
-      btCmd[4] = 2;
-      btCmd[5] = 1;
-      queueBtCommand(Helper::SET_WRITE_NEW_POWER, btCmd);
-    }
-    else if (msg == "Man. P2")
-    {
-      memcpy(btCmd, h.setChangeAutoSwitch, 6);
-      btCmd[4] = 0;
-      queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
-
-      memcpy(btCmd, h.setWriteNewPower, 6);
-      btCmd[4] = 2;
-      btCmd[5] = 2;
-      queueBtCommand(Helper::SET_WRITE_NEW_POWER, btCmd);
-    }
-    else if (msg == "Man. P3")
-    {
-      memcpy(btCmd, h.setChangeAutoSwitch, 6);
-      btCmd[4] = 0;
-      queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
-
-      memcpy(btCmd, h.setWriteNewPower, 6);
-      btCmd[4] = 2;
-      btCmd[5] = 3;
-      queueBtCommand(Helper::SET_WRITE_NEW_POWER, btCmd);
-    }
-    else if (msg == "Man. P4")
-    {
-      memcpy(btCmd, h.setChangeAutoSwitch, 6);
-      btCmd[4] = 0;
-      queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
-
-      memcpy(btCmd, h.setWriteNewPower, 6);
-      btCmd[4] = 2;
-      btCmd[5] = 4;
-      queueBtCommand(Helper::SET_WRITE_NEW_POWER, btCmd);
-    }
-    else if (msg == "Man. P5")
-    {
-      memcpy(btCmd, h.setChangeAutoSwitch, 6);
-      btCmd[4] = 0;
-      queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
-
-      memcpy(btCmd, h.setWriteNewPower, 6);
-      btCmd[4] = 2;
-      btCmd[5] = 5;
+      btCmd[4] = currentFan1Level;
+      if (msg == "Man. P1")
+        btCmd[5] = 1;
+      else if (msg == "Man. P2")
+        btCmd[5] = 2;
+      else if (msg == "Man. P3")
+        btCmd[5] = 3;
+      else if (msg == "Man. P4")
+        btCmd[5] = 4;
+      else if (msg == "Man. P5")
+        btCmd[5] = 5;
       queueBtCommand(Helper::SET_WRITE_NEW_POWER, btCmd);
     }
   }
@@ -577,13 +542,9 @@ void mqttCallback(String topic, byte *message, unsigned int length)
   {
     memcpy(btCmd, h.setOnOffChrono, 6);
     if (msg == "ON")
-    {
       btCmd[5] = 1;
-    }
     else if (msg == "OFF")
-    {
       btCmd[5] = 0;
-    }
     queueBtCommand(Helper::SET_ON_OFF_CHRONO, btCmd);
   }
   else if (topic == "edilkamin/322707E4/standby/set")
@@ -606,25 +567,24 @@ void mqttCallback(String topic, byte *message, unsigned int length)
 // MQTT reconnect
 void mqttReconnect()
 {
-  // Loop until we're reconnected
-  // while (!mqttClient.connected())
-  //{
-
   Serial.print(F("Attempting MQTT connection..."));
   if (mqttClient.connect(hostname, MQTT_USER, MQTT_PASSWORD))
   {
-    Serial.println(F("connected"));
+    Serial.println(F("Connected. Subscripting to topics..."));
     mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/hvac_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/preset_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/target_temperature/set", true);
     mqttClient.subscribe("edilkamin/322707E4/relax/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/automatic_mode/set", true);
     // mqttClient.subscribe("edilkamin/322707E4/airkare/set");
     mqttClient.subscribe("edilkamin/322707E4/chrono_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/standby/set", true);
     mqttClient.subscribe("edilkamin/322707E4/bluetooth/set", true);
-    Serial.println("publishing Autodiscover Config to HA...");
+    
+    Serial.println("Publishing Autodiscover Config to HA...");
     mqttClient.publish("homeassistant/climate/edilkamin_322707E4/config", h.jsonAutodiscover, true);
+    mqttClient.publish("homeassistant/switch/edilkamin_322707E4_automatic_mode/config", h.jsonAutodiscoverAutomaticMode, true);
     mqttClient.publish("homeassistant/switch/edilkamin_322707E4_relax/config", h.jsonAutodiscoverRelax, true);
     // mqttClient.publish("homeassistant/switch/edilkamin_322707E4_airkare/config", h.jsonAutodiscoverAirkare);
     mqttClient.publish("homeassistant/switch/edilkamin_322707E4_chrono_mode/config", h.jsonAutodiscoverCronoMode, true);
@@ -793,7 +753,7 @@ void loop()
       mqttClient.publish("edilkamin/322707E4/bluetooth/state", "ON");
     }
     else
-      Serial.println(F("We have failed to connect to the server; there is nothin more we will do."));
+      Serial.println(F("We have failed to connect to the server; there is nothing more we will do."));
     bleDoConnect = false;
   }
 

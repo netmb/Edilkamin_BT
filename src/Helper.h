@@ -175,7 +175,7 @@ public:
   const byte setEasyTime[6] PROGMEM = {1, 6, 3, 27, 0, 2};             // B5: 0,1; B6:2,3
   const byte setOnOffChrono[6] PROGMEM = {1, 6, 5, 34, 0, 0};          // B5 = ChronoProgram; B6: 0,1 = on,off
   const byte setRelaxStatus[6] PROGMEM = {1, 6, 5, 43, 0, 0};          // B5 = 0,1 =off,on; B6 = 0,1 =off, on; off=00 on=11
-  const byte setFan1[6] PROGMEM = {1, 6, 5, 41, 0, 0};                 // B5: Power 0-6; B6:03
+  const byte setFan1[6] PROGMEM = {1, 6, 5, 41, 0, 0};                 // B5: Power 0-6; B6:PowerLevel (notFan)
   const byte setFan2[6] PROGMEM = {1, 6, 5, 42, 0, 0};                 // B5: ?; B6:0,1 = Powerstate?
   const byte setFan3[6] PROGMEM = {1, 6, 5, 43, 0, 0};                 // B5: ?; B6:0,1 = Powerstate?
   const byte setCanalizedTemperature[6] PROGMEM = {1, 6, 5, 38, 0, 2}; // B4: 38,39; B5: 0,1; B6:2,3
@@ -188,7 +188,7 @@ public:
   const byte setTemperatureFormat[6] PROGMEM = {1, 6, 5, 36, 0, 0};   // B5: ?; B6: 0,1
   const byte setStandbyStatus[6] PROGMEM = {1, 6, 5, 44, 0, 0};       // B5: 0,1
   const byte setWriteNewTemperature[6] PROGMEM = {1, 6, 5, 37, 0, 0}; // B4: 37,38,39; B5: ?; B6: ?
-  const byte setWriteNewPower[6] PROGMEM = {1, 6, 5, 41, 0, 0};       // B5=fan1Value, B6= ? maybe 1-5?
+  const byte setWriteNewPower[6] PROGMEM = {1, 6, 5, 41, 0, 0};       // B5=fan1Value, B6= PowerLevel (not Fan)
   const byte setChangeAutoSwitch[6] PROGMEM = {1, 6, 5, 35, 1, 1};    // B5= 0,1 off,on
   const byte setOnOff[6] PROGMEM = {1, 6, 3, 28, 0, 0};               // B5 = 0, B6 = 1 = on, 0= 0ff
 
@@ -201,6 +201,7 @@ public:
   const char *jsonAutodiscoverBluetooth PROGMEM = "{\"name\": \"Bluetooth connect\",\"unique_id\": \"322707E4_edilkamin_bluetooth\",\"icon\": \"mdi:bluetooth\", \"device\": {\"identifiers\": [\"322707E4\"]},\"command_topic\": \"edilkamin/322707E4/bluetooth/set\",\"state_topic\": \"edilkamin/322707E4/bluetooth/state\",\"retain\": true}";
   const char *jsonAutodiscoverThermocouple PROGMEM = "{\"name\": \"Exhaust Temperature\",\"unique_id\": \"322707E4_edilkamin_thermocouple_temperature\",\"device_class\": \"temperature\",\"device\": {\"identifiers\": [\"322707E4\"]},\"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"state_topic\": \"edilkamin/322707E4/thermocouple_temperature/state\"}";
   const char *jsonAutodiscoverPelletLevel PROGMEM = "{\"name\":\"Pellet Level\",\"unique_id\":\"322707E4_edilkamin_pellet_level\",\"icon\": \"mdi:grain\", \"device\":{ \"identifiers\":[ \"322707E4\" ]},\"availability\":{ \"topic\":\"edilkamin/322707E4/availability/state\", \"payload_available\":\"ONLINE\", \"payload_not_available\":\"OFFLINE\"},\"state_topic\":\"edilkamin/322707E4/pellet_level/state\"}";
+  const char *jsonAutodiscoverAutomaticMode PROGMEM = "{\"name\": \"Automatic Mode\",\"unique_id\": \"322707E4_edilkamin_automatic_mode\",\"icon\": \"mdi:refresh-auto\",\"device\": {   \"identifiers\": [  \"322707E4\"   ]},\"availability\": {   \"topic\": \"edilkamin/322707E4/availability/state\",   \"payload_available\": \"ONLINE\",   \"payload_not_available\": \"OFFLINE\"},\"command_topic\": \"edilkamin/322707E4/automatic_mode/set\",\"state_topic\": \"edilkamin/322707E4/automatic_mode/state\",\"retain\": true }";
 
   void aesEncrypt(char *plainText, byte *output);
   void aesDecrypt(byte *cryptedText, byte *output);
