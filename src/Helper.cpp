@@ -93,15 +93,15 @@ void Helper::getTimestamp(byte* ts) {
   ts[1] = (now >> 16) & 0xFF;
   ts[0] = (now >> 24) & 0xFF;
 }
-
-void Helper::hexDebug(byte* data, size_t length) {
+/*
+void Helper::hexDebug(byte* data, size_t length, char *returnStr) {
   for (int i = 0; i < length; i++) {
-    char str[3];
-    sprintf(str, "%02x", (int)data[i]);
-    Serial.print(str);
+    //char str[3];
+    sprintf(returnStr, "%02x", (int)data[i]);
+    //Serial.print(str);
   }
 }
-
+*/
 void Helper::crc16modbus(byte *msg, size_t len, byte *crcOut)
 {
   register uint8_t crcHi = 0xFF;
@@ -113,7 +113,6 @@ void Helper::crc16modbus(byte *msg, size_t len, byte *crcOut)
     crcLo = crcHi ^ pgm_read_byte(&crcHiTable[index]);
     crcHi = pgm_read_byte(&crcLoTable[index]);
   }
-  //return (crcHi << 8 | crcLo);
   crcOut[0] = crcLo; 
   crcOut[1] = crcHi;
 }

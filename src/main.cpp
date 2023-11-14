@@ -3,14 +3,27 @@
 #include <WiFi.h>
 #include <NimBLEDevice.h>
 #include <PubSubClient.h>
+#include <TelnetStream.h>
 
-/* WLAN-Setup */
+#define DEBUG 1 // 0 = Off, 1 = Local, 2 = Telnet
+#if DEBUG == 1
+#define debug(x) Serial.print(x)
+#define debugln(x) Serial.println(x)
+#elif DEBUG == 2
+#define debug(x) TelnetStream.print(x)
+#define debugln(x) TelnetStream.println(x)
+#else
+#define debug(x)
+#define debugln(x)
+#endif
 
 const char *hostname PROGMEM = "edilkaminble";
 
 enum states
 {
   START,
+  BT_CONNECT_CHECK,
+  BT_CHECK_ON_OFF_TIMES,
   CHECK_BT_WRITE_QUEUE,
   DO_NEXT_QUERY,
   BT_WRITE_REQUEST,
@@ -36,12 +49,19 @@ static BLERemoteCharacteristic *pRemoteCharacteristicRead;
 static BLEAdvertisedDevice *myDevice;
 static BLEClient *pClient;
 unsigned long currentMillis = 0;
-unsigned long previousMillis = 0;
-unsigned long previousMillisConnect = 0;
+unsigned long msLastQuery = 0;
+unsigned long msLastMqttConnect = 0;
+unsigned long msLastBleConnect = 0;
 unsigned long writeTimestamp = 0;
+unsigned long bleLastConnect = 0;
+unsigned long bleLastSwitchOff = 0;
 const long queryInterval = 2000;
 const long responseTimeout = 1000;
-const long connectTimeout = 30000;
+const long connectTimeout = 1000 * 30; // 30 sec
+const long bleConnectTimeout = 1000 * 300; // 5 min
+const long bleOnTime = 1000 * 30; // 30 sec 
+const long bleOffTime = 1000 * 120; // 2 min
+
 byte currentFan1Level = 0;
 byte currentPowerLevel = 0;
 bool automatic = false;
@@ -84,20 +104,23 @@ const queryLookup queryQueue[] = {
     {Helper::READ_MAIN_ENV_TEMP, h.readMainEnvTemp},
     {Helper::READ_THERMOCOUPLE_TEMP, h.readThermocoupleTemperature},
     {Helper::READ_TEMPERATURE, h.readTemperature},
-    //{Helper::READ_FAN_MACHINE, h.readFanMachine},
     {Helper::READ_FAN, h.readFan},
     {Helper::READ_RELAX, h.readRelax},
-    //{Helper::READ_FIREPLACE_CURRENT_POWER, h.readFireplaceCurrentPower},
-    //{Helper::READ_PELLET_SENSOR, h.readPelletSensor},
-    //{Helper::READ_PELLET_REMAINING, h.readPelletRemaining},
-    //{Helper::READ_ECO_TEMP, h.readEconomyTemperature},
-    //{Helper::READ_COMFORT_TEMP, h.readComfortTemperature},
     {Helper::READ_FIREPLACE_MAIN_STATUS, h.readFireplaceMainStatus},
     {Helper::READ_STANDBY_STATUS, h.readStandbyStatus},
-    {Helper::READ_WARNING_FLAGS, h.readWarningFlags}
-    };
+    {Helper::READ_WARNING_FLAGS, h.readWarningFlags}};
 
-
+void hexDebug(byte *data, size_t length)
+{
+  char output[(length * 2) + 1];
+  char *ptr = &output[0];
+  int i;
+  for (i = 0; i < length; i++)
+  {
+    ptr += sprintf(ptr, "%02X", (int)data[i]);
+  }
+  debug(output);
+}
 
 void queueBtCommand(Helper::btCmds name, byte *cmd)
 {
@@ -107,9 +130,9 @@ void queueBtCommand(Helper::btCmds name, byte *cmd)
     {
       btWriteQueue[i].name = name;
       memcpy(btWriteQueue[i].cmd, cmd, 6);
-      Serial.print(F(", bluetooh command placed at queue-index:"));
-      Serial.print(i);
-      Serial.println();
+      debug(F(", queued at index:"));
+      debug(i);
+      debugln();
       break;
     }
   }
@@ -118,22 +141,18 @@ void queueBtCommand(Helper::btCmds name, byte *cmd)
 void nextQuery()
 {
   byte btCmd[6];
-  Serial.println("");
-  Serial.print(F("Next Query Command:"));
-  Serial.print(queryQueue[queryIndex].name);
-  Serial.print(F(",command:"));
-  h.hexDebug((unsigned char *)queryQueue[queryIndex].cmd, 6);
+  debugln();
+  debug(F("Next Query Command:"));
+  debug(queryQueue[queryIndex].name);
+  debug(F(",command:"));
+  hexDebug((unsigned char *)queryQueue[queryIndex].cmd, 6);
   memcpy(btCmd, queryQueue[queryIndex].cmd, 6);
   queueBtCommand(queryQueue[queryIndex].name, btCmd);
 
   if (queryIndex < queryQueueElements - 1)
-  {
     queryIndex++;
-  }
   else
-  {
     queryIndex = 0;
-  }
 }
 
 bool writeQueueHasElements()
@@ -153,16 +172,16 @@ void writeBtData()
     if (btWriteQueue[i].name != Helper::NO_CMD)
     {
       currentOp = btWriteQueue[i].name;
-      Serial.print(F("Write Bluetooth Command from queue-index:"));
+      debug(F("-> Write, queue-index:"));
       byte btPacket[32];
-      Serial.print(i);
-      Serial.print(F(", "));
-      Serial.print(F("command-number:"));
-      Serial.print(currentOp);
-      Serial.print(", command:");
+      debug(i);
+      debug(F(", "));
+      debug(F("cmd:"));
+      debug(currentOp);
+      debug(", data:");
       h.createBtPacket(btWriteQueue[i].cmd, 6, btPacket);
-      h.hexDebug(btWriteQueue[i].cmd, 6);
-      Serial.println();
+      hexDebug(btWriteQueue[i].cmd, 6);
+      debugln();
       btWriteQueue[i].name = Helper::NO_CMD;
       pRemoteCharacteristicWrite->writeValue(btPacket, 32);
       break;
@@ -171,18 +190,18 @@ void writeBtData()
 }
 void processBtResponseData(byte *btData)
 {
-  Serial.print(F("Received bluetooth data:"));
+  debug(F("<- Read, data:"));
   Helper::structDatagram d;
   h.getBtContent(btData, 32, &d);
-  h.hexDebug(d.payload, 6);
-  Serial.println();
+  hexDebug(d.payload, 6);
+  debugln();
   if (d.payload[1] == 6)
   { // Set Response
-    Serial.print(F("Received response from command-number (set):"));
-    Serial.print(currentOp);
-    Serial.print(";");
-    h.hexDebug(d.payload, 6);
-    Serial.println("");
+    debug(F("Set-Response for cmd:"));
+    debug(currentOp);
+    debug("; data:");
+    hexDebug(d.payload, 6);
+    debugln("");
     if (currentOp == Helper::SET_ON_OFF)
     {
       if (d.payload[5] == 1)
@@ -201,47 +220,49 @@ void processBtResponseData(byte *btData)
     {
       currentFan1Level = d.payload[4];
       currentPowerLevel = d.payload[5];
-      switch (d.payload[5]) {
-        case 1:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
-          break;
-        case 2:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
-          break;
-        case 3:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
-          break;
-        case 4:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
-          break;
-        case 5:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
-          break;
+      switch (d.payload[5])
+      {
+      case 1:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
+        break;
+      case 2:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
+        break;
+      case 3:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
+        break;
+      case 4:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
+        break;
+      case 5:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
+        break;
       }
     }
     else if (currentOp == Helper::SET_FAN_1)
     {
       currentFan1Level = d.payload[4];
       currentPowerLevel = d.payload[5];
-      switch(d.payload[4]) {
-        case 1:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
-          break;
-        case 2:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
-          break;
-        case 3:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
-          break;
-        case 4:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
-          break;
-        case 5:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
-          break;
-        case 6:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
-          break;          
+      switch (d.payload[4])
+      {
+      case 1:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
+        break;
+      case 2:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
+        break;
+      case 3:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
+        break;
+      case 4:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
+        break;
+      case 5:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
+        break;
+      case 6:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
+        break;
       }
     }
     else if (currentOp == Helper::SET_ON_OFF_CHRONO)
@@ -260,7 +281,8 @@ void processBtResponseData(byte *btData)
     }
     else if (currentOp == Helper::SET_CHANGE_AUTO_SWITCH)
     {
-      if (d.payload[4] == 0) {
+      if (d.payload[4] == 0)
+      {
         automatic = false;
         mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "OFF");
       }
@@ -282,11 +304,12 @@ void processBtResponseData(byte *btData)
   }
   else if (d.payload[1] == 3)
   { // Query Response
-    Serial.print(F("Received response from command-number (query):"));
-    Serial.print(currentOp);
-    Serial.print(";");
-    h.hexDebug(d.payload, 6);
-    Serial.println();
+    debug(F("Response for query-cmd:"));
+    debug(currentOp);
+    debug("; data:");
+    hexDebug(d.payload, 6);
+
+    debugln();
     if (currentOp == Helper::READ_AUTOMATIC)
     {
       if (d.payload[3] == 1)
@@ -295,7 +318,8 @@ void processBtResponseData(byte *btData)
         mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "ON");
         mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Auto");
       }
-      else if (d.payload[3] == 0) {
+      else if (d.payload[3] == 0)
+      {
         automatic = false;
         mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "OFF");
       }
@@ -303,22 +327,23 @@ void processBtResponseData(byte *btData)
     else if (currentOp == Helper::READ_POWER && !automatic)
     {
       currentPowerLevel = d.payload[4];
-      switch (d.payload[4]) {
-        case 1:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
-          break;
-        case 2:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
-          break;
-        case 3:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
-          break;
-        case 4:
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
-          break;
-        case 5: 
-          mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
-          break;
+      switch (d.payload[4])
+      {
+      case 1:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P1");
+        break;
+      case 2:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P2");
+        break;
+      case 3:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P3");
+        break;
+      case 4:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P4");
+        break;
+      case 5:
+        mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Man. P5");
+        break;
       }
     }
     else if (currentOp == Helper::READ_MAIN_ENV_TEMP)
@@ -332,7 +357,7 @@ void processBtResponseData(byte *btData)
     else if (currentOp == Helper::READ_THERMOCOUPLE_TEMP)
     {
       uint16_t r = (d.payload[3] << 8) + d.payload[4];
-      r = (r*0.1) + 0.5;
+      r = (r * 0.1) + 0.5;
       char msg_out[10];
       itoa(r, msg_out, 10);
       mqttClient.publish("edilkamin/322707E4/thermocouple_temperature/state", msg_out);
@@ -348,25 +373,26 @@ void processBtResponseData(byte *btData)
     else if (currentOp == Helper::READ_FAN)
     {
       currentFan1Level = d.payload[3];
-      switch(d.payload[3]) {
-        case 1:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
-          break;
-        case 2:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
-          break;
-        case 3:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
-          break;
-        case 4:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
-          break;
-        case 5:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
-          break;
-        case 6:
-          mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
-          break;
+      switch (d.payload[3])
+      {
+      case 1:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
+        break;
+      case 2:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "40%");
+        break;
+      case 3:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "60%");
+        break;
+      case 4:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "80%");
+        break;
+      case 5:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "100%");
+        break;
+      case 6:
+        mqttClient.publish("edilkamin/322707E4/fan_mode/state", "Auto");
+        break;
       }
     }
     else if (currentOp == Helper::READ_RELAX)
@@ -418,11 +444,11 @@ void processBtResponseData(byte *btData)
       else
         mqttClient.publish("edilkamin/322707E4/status/state", "-");
     }
-    else if(currentOp == Helper::READ_WARNING_FLAGS)
+    else if (currentOp == Helper::READ_WARNING_FLAGS)
     {
-      if (d.payload[4] == 0) //Pellet ok
+      if (d.payload[4] == 0) // Pellet ok
         mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Ok");
-      else if(d.payload[4] == 4) //Pellet low
+      else if (d.payload[4] == 4) // Pellet low
         mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Empty");
     }
   }
@@ -431,23 +457,24 @@ void processBtResponseData(byte *btData)
 // MQTT-Callback
 void mqttCallback(String topic, byte *message, unsigned int length)
 {
-  Serial.println("");
-  Serial.print(F("MQTT-Message arrived with topic: "));
-  Serial.print(topic);
-  Serial.print(F(". Message: "));
+  debugln();
+  debug(F("MQTT-Message arrived with topic: "));
+  debug(topic);
+  debug(F(". Message: "));
   String msg;
   for (unsigned int i = 0; i < length; i++)
   {
-    Serial.print((char)message[i]);
+    // debug((char)message[i]);
     msg += (char)message[i];
   }
-  //Serial.println("");
+  debug(msg);
+  // debugln("");
   byte btCmd[6];
   if (topic == "edilkamin/322707E4/bluetooth/set")
   {
     if (msg == "ON")
       doBtConnect = true;
-    else if (msg == "OFF")
+    if (msg == "OFF")
       doBtConnect = false;
   }
   else if (topic == "edilkamin/322707E4/hvac_mode/set")
@@ -459,7 +486,7 @@ void mqttCallback(String topic, byte *message, unsigned int length)
       btCmd[5] = 0;
     queueBtCommand(Helper::SET_ON_OFF, btCmd);
   }
-  else if (topic == "edilkamin/322707E4/fan_mode/set"  && currentFan1Level != 0 && currentPowerLevel != 0) //ignore set command if fan & power-level is 0 (=boot)
+  else if (topic == "edilkamin/322707E4/fan_mode/set" && currentFan1Level != 0 && currentPowerLevel != 0) // ignore set command if fan & power-level is 0 (=boot)
   {
     byte btPacket[32];
     memcpy(btCmd, h.setFan1, 6);
@@ -478,7 +505,8 @@ void mqttCallback(String topic, byte *message, unsigned int length)
       btCmd[4] = 6;
     queueBtCommand(Helper::SET_FAN_1, btCmd);
   }
-  else if (topic == "edilkamin/322707E4/automatic_mode/set") {
+  else if (topic == "edilkamin/322707E4/automatic_mode/set")
+  {
     byte btPacket[32];
     memcpy(btCmd, h.setChangeAutoSwitch, 6);
     if (msg == "ON")
@@ -487,15 +515,17 @@ void mqttCallback(String topic, byte *message, unsigned int length)
       btCmd[4] = 0;
     queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
   }
-  else if (topic == "edilkamin/322707E4/preset_mode/set" && currentFan1Level != 0 && currentPowerLevel != 0) //ignore set command if fan & power-level is 0 (=boot)
+  else if (topic == "edilkamin/322707E4/preset_mode/set" && currentFan1Level != 0 && currentPowerLevel != 0) // ignore set command if fan & power-level is 0 (=boot)
   {
     byte btPacket[32];
-    if (msg == "Auto") {
+    if (msg == "Auto")
+    {
       memcpy(btCmd, h.setChangeAutoSwitch, 6);
       btCmd[4] = 1;
       queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
     }
-    else {
+    else
+    {
       memcpy(btCmd, h.setWriteNewPower, 6);
       btCmd[4] = currentFan1Level;
       if (msg == "Man. P1")
@@ -567,10 +597,10 @@ void mqttCallback(String topic, byte *message, unsigned int length)
 // MQTT reconnect
 void mqttReconnect()
 {
-  Serial.print(F("Attempting MQTT connection..."));
+  debug(F("Attempting MQTT connection..."));
   if (mqttClient.connect(hostname, MQTT_USER, MQTT_PASSWORD))
   {
-    Serial.println(F("Connected. Subscripting to topics..."));
+    debugln(F("Connected. Subscripting to topics..."));
     mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/hvac_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/preset_mode/set", true);
@@ -581,8 +611,8 @@ void mqttReconnect()
     mqttClient.subscribe("edilkamin/322707E4/chrono_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/standby/set", true);
     mqttClient.subscribe("edilkamin/322707E4/bluetooth/set", true);
-    
-    Serial.println("Publishing Autodiscover Config to HA...");
+
+    debugln("Publishing Autodiscover Config to HA...");
     mqttClient.publish("homeassistant/climate/edilkamin_322707E4/config", h.jsonAutodiscover, true);
     mqttClient.publish("homeassistant/switch/edilkamin_322707E4_automatic_mode/config", h.jsonAutodiscoverAutomaticMode, true);
     mqttClient.publish("homeassistant/switch/edilkamin_322707E4_relax/config", h.jsonAutodiscoverRelax, true);
@@ -596,8 +626,8 @@ void mqttReconnect()
   }
   else
   {
-    Serial.print(F("failed, rc="));
-    Serial.print(mqttClient.state());
+    debug(F("failed, rc="));
+    debug(mqttClient.state());
   }
   //}
 }
@@ -617,46 +647,47 @@ class MyClientCallback : public BLEClientCallbacks
   void onDisconnect(BLEClient *pclient)
   {
     bleConnected = false;
-    Serial.println(F("BLE disconnected"));
+    debugln();
+    debugln(F("BLE disconnected..."));
   }
 };
 
 bool connectToServer()
 {
-  Serial.print(F("Forming a connection to "));
-  Serial.println(myDevice->getAddress().toString().c_str());
+  debug(F("Forming a connection to "));
+  debugln(myDevice->getAddress().toString().c_str());
 
   pClient = BLEDevice::createClient();
-  Serial.println(F(" - Created client"));
+  debugln(F(" - Created client"));
 
   pClient->setClientCallbacks(new MyClientCallback());
 
   // Connect to the remove BLE Server.
   pClient->connect(myDevice); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
-  Serial.println(F(" - Connected to server"));
+  debugln(F(" - Connected to server"));
 
   // Obtain a reference to the service we are after in the remote BLE server.
   BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr)
   {
-    Serial.print(F("Failed to find our service UUID: "));
-    Serial.println(serviceUUID.toString().c_str());
+    debug(F("Failed to find our service UUID: "));
+    debugln(serviceUUID.toString().c_str());
     pClient->disconnect();
     return false;
   }
-  Serial.println(F(" - Found our service"));
+  debugln(F(" - Found our service"));
 
   // Obtain a reference to the characteristic in the service of the remote BLE server.
   pRemoteCharacteristicWrite = pRemoteService->getCharacteristic(charUUIDWrite);
   pRemoteCharacteristicRead = pRemoteService->getCharacteristic(charUUIDRead);
   if (pRemoteCharacteristicWrite == nullptr || pRemoteCharacteristicRead == nullptr)
   {
-    Serial.print(F("Failed to find our characteristic UUID: "));
-    // Serial.println(charUUIDWrite.toString().c_str());
+    debug(F("Failed to find our characteristic UUID: "));
+    // debugln(charUUIDWrite.toString().c_str());
     pClient->disconnect();
     return false;
   }
-  Serial.println(F(" - Found our characteristic"));
+  debugln(F(" - Found our characteristic"));
 
   if (pRemoteCharacteristicWrite->canNotify())
   {
@@ -669,7 +700,7 @@ bool connectToServer()
   }
 
   bleConnected = true;
-  Serial.println(F("Publishing Online-state to HA..."));
+  debugln(F("Publishing Online-state to HA..."));
   mqttClient.publish("edilkamin/322707E4/availability/state", "ONLINE", true);
   return true;
 }
@@ -681,8 +712,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
   void onResult(BLEAdvertisedDevice *advertisedDevice)
   {
-    Serial.print(F("BLE Advertised Device found: "));
-    Serial.println(advertisedDevice->toString().c_str());
+    debug(F("BLE Advertised Device found: "));
+    debugln(advertisedDevice->toString().c_str());
 
     if (advertisedDevice->haveServiceUUID() && advertisedDevice->isAdvertisingService(serviceUUID))
     {
@@ -701,15 +732,15 @@ void initWiFi()
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
   WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
-  Serial.print(F("Connecting to WiFi .."));
+  debug(F("Connecting to WiFi .."));
   while (WiFi.status() != WL_CONNECTED)
   {
-    Serial.print('.');
+    debug('.');
     delay(1000);
   }
-  Serial.print(WiFi.localIP());
-  Serial.print(", ");
-  Serial.println(WiFi.getHostname());
+  debug(WiFi.localIP());
+  debug(", ");
+  debugln(WiFi.getHostname());
 }
 
 void setup()
@@ -717,9 +748,11 @@ void setup()
   Serial.begin(9600);
   initWiFi();
   h.getNtpTime();
+  TelnetStream.begin();
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(2048);
   mqttClient.setCallback(mqttCallback);
+  msLastBleConnect = millis(); 
   BLEDevice::init("");
   BLEScan *pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
@@ -732,28 +765,53 @@ void setup()
 void loop()
 {
   currentMillis = millis();
-  if (!mqttClient.loop() || !mqttClient.connected())
+
+  // Telnet-Terminal
+  switch (TelnetStream.read())
   {
-    mqttReconnect();
-    if (currentMillis - previousMillisConnect >= connectTimeout)
-    {
-      previousMillisConnect = currentMillis;
+  case 'c':
+    debugln("Bye...");
+    TelnetStream.flush();
+    TelnetStream.stop();
+    break;
+  }
+
+  // BLE Watchdog - Restart ESP if no connect for 5min
+  if (!bleConnected) {
+    if (currentMillis - msLastBleConnect >= bleConnectTimeout) {
+      debugln(F("BLE not connected watchdog triggered - ESP Restart..."));
       ESP.restart();
     }
   }
-  else {
-    previousMillisConnect = currentMillis;
+  else { 
+      msLastBleConnect = currentMillis;
+  }
+
+  // MQTT Watchdog - Restart ESP if no connect to MQTT-Server
+  if (!mqttClient.loop() || !mqttClient.connected())
+  {
+    mqttReconnect();
+    if (currentMillis - msLastMqttConnect >= connectTimeout)
+    {
+      msLastMqttConnect = currentMillis;
+      debugln(F("MQTT not connected watchdog triggered - ESP Restart..."));
+      ESP.restart();
+    }
+  }
+  else
+  {
+    msLastMqttConnect = currentMillis;
   }
 
   if (bleDoConnect == true)
   {
     if (connectToServer())
     {
-      Serial.println(F("We are now connected to the BLE Server."));
+      debugln(F("We are now connected to the BLE Server."));
       mqttClient.publish("edilkamin/322707E4/bluetooth/state", "ON");
     }
     else
-      Serial.println(F("We have failed to connect to the server; there is nothing more we will do."));
+      debugln(F("Failed to connect to the MQTT-Server; there is nothing more we will do."));
     bleDoConnect = false;
   }
 
@@ -762,65 +820,88 @@ void loop()
     if (pClient->isConnected())
     {
       pClient->disconnect();
-      mqttClient.publish("edilkamin/322707E4/availability/state", "OFFLINE", true);
+      // mqttClient.publish("edilkamin/322707E4/availability/state", "OFFLINE", true);
       mqttClient.publish("edilkamin/322707E4/bluetooth/state", "OFF", true);
     }
   }
   else if (!bleConnected && doBtConnect)
   {
-    BLEDevice::getScan()->start(0);
+    BLEDevice::getScan()->start(5, false);
     mqttClient.publish("edilkamin/322707E4/bluetooth/state", "ON", true);
     status = START;
   }
 
-  if (bleConnected)
+  switch (status)
   {
-    switch (status)
+  case START:
+    status = CHECK_BT_WRITE_QUEUE;
+    break;
+  case DO_NEXT_QUERY:
+    if (currentMillis - msLastQuery >= queryInterval)
     {
-    case START:
+      msLastQuery = currentMillis;
+      nextQuery();
       status = CHECK_BT_WRITE_QUEUE;
-      break;
-    case DO_NEXT_QUERY:
-      if (currentMillis - previousMillis >= queryInterval)
-      {
-        previousMillis = currentMillis;
-        nextQuery();
-        status = CHECK_BT_WRITE_QUEUE;
-      }
-      break;
-    case CHECK_BT_WRITE_QUEUE:
-      if (writeQueueHasElements())
-        status = BT_WRITE_REQUEST;
-      else
-        status = DO_NEXT_QUERY;
-      break;
-    case BT_WRITE_REQUEST:
-      btResponse = false;
-      writeBtData();
-      writeTimestamp = currentMillis;
-      status = AWAIT_BT_RESPONSE;
-      break;
-    case AWAIT_BT_RESPONSE:
-      if (!btResponse && currentMillis - writeTimestamp >= responseTimeout)
-      {
-        Serial.println(F("Bluetooth Response Timeout !"));
-        status = START;
-      }
-      if (btResponse)
-        status = PROCESSING_BT_RESPONSE;
-      break;
-    case PROCESSING_BT_RESPONSE:
-      processBtResponseData(btData);
-      status = DONE_PROCESSING_BT_RESPONSE;
-      break;
-    case DONE_PROCESSING_BT_RESPONSE:
+    }
+    break;
+  case CHECK_BT_WRITE_QUEUE:
+    if (writeQueueHasElements())
+      status = BT_CONNECT_CHECK;
+    else
+      status = BT_CHECK_ON_OFF_TIMES;
+    break;
+  case BT_CHECK_ON_OFF_TIMES:
+    if (bleConnected && currentMillis - bleLastConnect >= bleOnTime) 
+    {
+      doBtConnect = false;
+      bleLastSwitchOff = currentMillis;
       status = START;
-      break;
-    };
-  }
-  else if (bleDoScan && doBtConnect)
-  {
-    mqttClient.publish("edilkamin/322707E4/availability/state", "OFFLINE", true);
-    BLEDevice::getScan()->start(0);
-  }
+    }
+    else if (bleConnected)
+    {
+      status = DO_NEXT_QUERY;
+    }
+    if (!bleConnected && currentMillis - bleLastSwitchOff >= bleOffTime)
+    {
+      debugln(F("Bluetooth wake up..."));
+      status = DO_NEXT_QUERY;
+    }  
+    else if (!bleConnected)  {
+      status = START;
+    }
+    break;
+  case BT_CONNECT_CHECK:
+    if (bleConnected)
+      status = BT_WRITE_REQUEST;
+    else
+    {
+      status = BT_CONNECT_CHECK;
+      doBtConnect = true;
+      bleLastConnect = currentMillis;
+    }
+    break;
+  case BT_WRITE_REQUEST:
+    btResponse = false;
+    writeBtData();
+    writeTimestamp = currentMillis;
+    status = AWAIT_BT_RESPONSE;
+    break;
+  case AWAIT_BT_RESPONSE:
+    if (!btResponse && currentMillis - writeTimestamp >= responseTimeout)
+    {
+      debugln(F("Bluetooth Response Timeout !"));
+      status = START;
+    }
+    if (btResponse)
+      status = PROCESSING_BT_RESPONSE;
+    break;
+  case PROCESSING_BT_RESPONSE:
+    processBtResponseData(btData);
+    status = DONE_PROCESSING_BT_RESPONSE;
+    break;
+  case DONE_PROCESSING_BT_RESPONSE:
+    status = START;
+    break;
+  };
 }
+
