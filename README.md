@@ -6,10 +6,12 @@ As the Bluetooth debug has shown, the payload is AES encrypted. Fortunately the 
 
 I wrote the code for my Slide2 7-UP pellet stove, but actually all stoves from Edilkamin should work, which are controlled via "The mind".
 
-If you want to try the code, you should include the code as Visual-Studio Code Platform-IO-Project via the Github URL. 
+## Installation:
 
-Afterwards you have to adjust the WLAN-/ MQTT- and Time-settings in settings.ini.dist. Rename settings.ini.dist to settings.ini after that. Maybe you will change your ESP32-Board in platformio.ini also. Compile and flash. If everything goes well you are done now. 
-The ESP will search for the pellet stove via the corresponding Bluetooth characteristics and automatically add it to Home-Assistant via the MQTT discovery function.
+Install Firmware with the following URL: https://netmb.github.io/Edilkamin_BT/webflash/
+
+Please ensure that the boot button on the ESP32 is pressed when establishing the USB connection.
+If everything has worked, you should see an initial configuration Wi-Fi network called “Edilkamin_BT_AP.” Please connect to this Wi-Fi network and enter the necessary connection parameters. After the reset, the ESP32 will attempt to connect to the stove. Please do not forget that the stove must be put into pairing mode when connecting for the first time! If that also works, you will find a new device in Home Assistant.
 
 <img src="./images/ha_hvac.png" alt="Write" title="Write" width="300"> <img src="./images/ha_mqtt.png" alt="Write" title="Write" width="300">
 
