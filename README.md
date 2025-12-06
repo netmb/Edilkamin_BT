@@ -8,6 +8,8 @@ I wrote the code for my Slide2 7-UP pellet stove, but actually all stoves from E
 
 ## Installation:
 
+!! Webflash currenty only works with Wemos D1 Mini ESP32 !!
+
 Install Firmware with the following URL: https://netmb.github.io/Edilkamin_BT/webflash/
 
 Please ensure that the boot button on the ESP32 is pressed when establishing the USB connection.
