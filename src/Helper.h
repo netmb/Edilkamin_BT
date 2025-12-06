@@ -4,12 +4,10 @@
 
 #include <Arduino.h>
 
-class Helper
-{
+class Helper {
 private:
 public:
-  enum btCmds
-  {
+  enum btCmds {
     NO_CMD,
     READ_BOILER_SET,
     READ_STOVE_TYPE,
@@ -97,10 +95,10 @@ public:
     SET_ON_OFF
   };
 
-  struct structDatagram
-  {
+  struct structDatagram {
     byte timestamp[4] = {0x00, 0x00, 0x00, 0x00};
-    byte fixedKey[16] = {0x31, 0xdd, 0x34, 0x51, 0x26, 0x39, 0x20, 0x23, 0x9f, 0x4b, 0x68, 0x20, 0xe7, 0x25, 0xfc, 0x75};
+    byte fixedKey[16] = {0x31, 0xdd, 0x34, 0x51, 0x26, 0x39, 0x20, 0x23,
+                         0x9f, 0x4b, 0x68, 0x20, 0xe7, 0x25, 0xfc, 0x75};
     byte payload[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     byte checksum[2] = {0x00, 0x00};
     byte padding[4] = {0x04, 0x04, 0x04, 0x04};
@@ -170,44 +168,151 @@ public:
   const byte readComfortTemperature[6] PROGMEM = {1, 3, 4, 205, 0, 1};
   const byte readFireplaceMainStatus[6] PROGMEM = {1, 3, 2, 228, 0, 1};
   // set
-  const byte setTemperatureEconomy[6] PROGMEM = {1, 6, 4, 204, 0, 2};  // B5: 0,1; B6:2,3
-  const byte setTemperatureComfort[6] PROGMEM = {1, 6, 4, 205, 0, 2};  // B5: 0,1; B6:2,3
-  const byte setEasyTime[6] PROGMEM = {1, 6, 3, 27, 0, 2};             // B5: 0,1; B6:2,3
-  const byte setOnOffChrono[6] PROGMEM = {1, 6, 5, 34, 0, 0};          // B5 = ChronoProgram; B6: 0,1 = on,off
-  const byte setRelaxStatus[6] PROGMEM = {1, 6, 5, 43, 0, 0};          // B5 = 0,1 =off,on; B6 = 0,1 =off, on; off=00 on=11
-  const byte setFan1[6] PROGMEM = {1, 6, 5, 41, 0, 0};                 // B5: Power 0-6; B6:PowerLevel (notFan)
-  const byte setFan2[6] PROGMEM = {1, 6, 5, 42, 0, 0};                 // B5: ?; B6:0,1 = Powerstate?
-  const byte setFan3[6] PROGMEM = {1, 6, 5, 43, 0, 0};                 // B5: ?; B6:0,1 = Powerstate?
-  const byte setCanalizedTemperature[6] PROGMEM = {1, 6, 5, 38, 0, 2}; // B4: 38,39; B5: 0,1; B6:2,3
-  const byte setAirKare[6] PROGMEM = {1, 6, 3, 28, 0, 0};              // B5: not set, so assume 0?; B6: not set, so assume 0?
-  const byte setContinueCoclea[6] PROGMEM = {1, 6, 5, 46, 0, 0};       // B5: 0,1; B6: 0,1
-  const byte setBleRegister[6] PROGMEM = {1, 6, 5, 56, 0, 0};          // B6: unknown
-  const byte setChargeCoclea[6] PROGMEM = {1, 6, 3, 28, 0, 0};         // B5: ?, B6: 0,1
-  const byte setStandbyTime[6] PROGMEM = {1, 6, 5, 45, 0, 0};          // B5: 0,1; B6: 0,1
+  const byte setTemperatureEconomy[6] PROGMEM = {1,   6, 4,
+                                                 204, 0, 2}; // B5: 0,1; B6:2,3
+  const byte setTemperatureComfort[6] PROGMEM = {1,   6, 4,
+                                                 205, 0, 2}; // B5: 0,1; B6:2,3
+  const byte setEasyTime[6] PROGMEM = {1, 6, 3, 27, 0, 2};   // B5: 0,1; B6:2,3
+  const byte setOnOffChrono[6] PROGMEM = {
+      1, 6, 5, 34, 0, 0}; // B5 = ChronoProgram; B6: 0,1 = on,off
+  const byte setRelaxStatus[6] PROGMEM = {
+      1, 6, 5, 43, 0, 0}; // B5 = 0,1 =off,on; B6 = 0,1 =off, on; off=00 on=11
+  const byte setFan1[6] PROGMEM = {
+      1, 6, 5, 41, 0, 0}; // B5: Power 0-6; B6:PowerLevel (notFan)
+  const byte setFan2[6] PROGMEM = {1,  6, 5,
+                                   42, 0, 0}; // B5: ?; B6:0,1 = Powerstate?
+  const byte setFan3[6] PROGMEM = {1,  6, 5,
+                                   43, 0, 0}; // B5: ?; B6:0,1 = Powerstate?
+  const byte setCanalizedTemperature[6] PROGMEM = {
+      1, 6, 5, 38, 0, 2}; // B4: 38,39; B5: 0,1; B6:2,3
+  const byte setAirKare[6] PROGMEM = {
+      1,  6, 3,
+      28, 0, 0}; // B5: not set, so assume 0?; B6: not set, so assume 0?
+  const byte setContinueCoclea[6] PROGMEM = {1,  6, 5,
+                                             46, 0, 0}; // B5: 0,1; B6: 0,1
+  const byte setBleRegister[6] PROGMEM = {1, 6, 5, 56, 0, 0};  // B6: unknown
+  const byte setChargeCoclea[6] PROGMEM = {1, 6, 3, 28, 0, 0}; // B5: ?, B6: 0,1
+  const byte setStandbyTime[6] PROGMEM = {1,  6, 5,
+                                          45, 0, 0}; // B5: 0,1; B6: 0,1
   const byte setSweep[6] PROGMEM = {1, 6, 3, 28, 0, 0};
-  const byte setTemperatureFormat[6] PROGMEM = {1, 6, 5, 36, 0, 0};   // B5: ?; B6: 0,1
-  const byte setStandbyStatus[6] PROGMEM = {1, 6, 5, 44, 0, 0};       // B5: 0,1
-  const byte setWriteNewTemperature[6] PROGMEM = {1, 6, 5, 37, 0, 0}; // B4: 37,38,39; B5: ?; B6: ?
-  const byte setWriteNewPower[6] PROGMEM = {1, 6, 5, 41, 0, 0};       // B5=fan1Value, B6= PowerLevel (not Fan)
-  const byte setChangeAutoSwitch[6] PROGMEM = {1, 6, 5, 35, 1, 1};    // B5= 0,1 off,on
-  const byte setOnOff[6] PROGMEM = {1, 6, 3, 28, 0, 0};               // B5 = 0, B6 = 1 = on, 0= 0ff
+  const byte setTemperatureFormat[6] PROGMEM = {1,  6, 5,
+                                                36, 0, 0}; // B5: ?; B6: 0,1
+  const byte setStandbyStatus[6] PROGMEM = {1, 6, 5, 44, 0, 0}; // B5: 0,1
+  const byte setWriteNewTemperature[6] PROGMEM = {
+      1, 6, 5, 37, 0, 0}; // B4: 37,38,39; B5: ?; B6: ?
+  const byte setWriteNewPower[6] PROGMEM = {
+      1, 6, 5, 41, 0, 0}; // B5=fan1Value, B6= PowerLevel (not Fan)
+  const byte setChangeAutoSwitch[6] PROGMEM = {1,  6, 5,
+                                               35, 1, 1}; // B5= 0,1 off,on
+  const byte setOnOff[6] PROGMEM = {1,  6, 3,
+                                    28, 0, 0}; // B5 = 0, B6 = 1 = on, 0= 0ff
 
-  const char *jsonAutodiscover PROGMEM = "{\"name\": \"Edilkamin\",\"unique_id\": \"322707E4_edilkamin_climate\",\"icon\": \"mdi:gas-burner\", \"optimistic\": \"true\", \"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"fan_mode_command_topic\": \"edilkamin/322707E4/fan_mode/set\",\"fan_mode_state_topic\": \"edilkamin/322707E4/fan_mode/state\",\"fan_modes\": [\"Auto\",\"20%\",\"40%\",\"60%\",\"80%\",\"100%\"],\"mode_command_topic\": \"edilkamin/322707E4/hvac_mode/set\",\"mode_state_topic\": \"edilkamin/322707E4/hvac_mode/state\",\"modes\": [\"heat\",\"off\"],\"preset_mode_command_topic\": \"edilkamin/322707E4/preset_mode/set\",\"preset_mode_state_topic\": \"edilkamin/322707E4/preset_mode/state\",\"preset_modes\": [\"Auto\",\"Man. P1\",\"Man. P2\",\"Man. P3\",\"Man. P4\",\"Man. P5\"],\"min_temp\": 20,\"max_temp\": 30,\"precision\": 0.5,\"retain\": true,\"temperature_command_topic\": \"edilkamin/322707E4/target_temperature/set\",\"temperature_state_topic\": \"edilkamin/322707E4/target_temperature/state\",\"current_temperature_topic\": \"edilkamin/322707E4/temperature/state\",\"temp_step\": 0.5,\"device\": {\"manufacturer\": \"Edilkamin\",\"identifiers\": [\"322707E4\"],\"name\": \"Edilkamin\"}}";
-  const char *jsonAutodiscoverRelax PROGMEM = "{\"name\": \"Relax\",\"unique_id\": \"322707E4_edilkamin_relax\",\"icon\": \"mdi:volume-off\",\"optimistic\": \"true\", \"device\": {\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": \"edilkamin/322707E4/relax/set\",\"state_topic\": \"edilkamin/322707E4/relax/state\", \"retain\": true}";
-  // const char *jsonAutodiscoverAirkare PROGMEM = "{\"name\": \"Airkare\",\"unique_id\": \"322707E4_edilkamin_airkare\",\"device\": {\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": \"edilkamin/322707E4/airkare/set\",\"state_topic\": \"edilkamin/322707E4/airkare/state\", \"retain\": true}";
-  const char *jsonAutodiscoverCronoMode PROGMEM = "{\"name\": \"Chrono\",\"unique_id\": \"322707E4_edilkamin_chrono_mode\",\"icon\": \"mdi:clock-outline\",\"optimistic\": \"true\", \"device\": {\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": \"edilkamin/322707E4/chrono_mode/set\",\"state_topic\": \"edilkamin/322707E4/chrono_mode/state\", \"retain\": true}";
-  const char *jsonAutodiscoverStandbyMode PROGMEM = "{\"name\": \"Standby\",\"unique_id\": \"322707E4_edilkamin_standby\",\"icon\": \"mdi:sleep\",\"optimistic\": \"true\", \"device\": {\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": \"edilkamin/322707E4/standby/set\",\"state_topic\": \"edilkamin/322707E4/standby/state\", \"retain\": true}";
-  const char *jsonAutodiscoverStatus PROGMEM = "{\"name\":\"Status\",\"unique_id\":\"322707E4_edilkamin_status\",\"icon\": \"mdi:state-machine\", \"optimistic\": \"true\", \"device\":{ \"identifiers\":[ \"322707E4\" ]},\"availability\":{ \"topic\":\"edilkamin/322707E4/availability/state\", \"payload_available\":\"ONLINE\", \"payload_not_available\":\"OFFLINE\"},\"state_topic\":\"edilkamin/322707E4/status/state\"}";
-  const char *jsonAutodiscoverBluetooth PROGMEM = "{\"name\": \"Bluetooth connect\",\"unique_id\": \"322707E4_edilkamin_bluetooth\",\"icon\": \"mdi:bluetooth\", \"device\": {\"identifiers\": [\"322707E4\"]},\"command_topic\": \"edilkamin/322707E4/bluetooth/set\",\"state_topic\": \"edilkamin/322707E4/bluetooth/state\",\"retain\": true}";
-  const char *jsonAutodiscoverThermocouple PROGMEM = "{\"name\": \"Exhaust Temperature\",\"unique_id\": \"322707E4_edilkamin_thermocouple_temperature\",\"device_class\": \"temperature\",\"device\": {\"identifiers\": [\"322707E4\"]},\"availability\": {\"topic\": \"edilkamin/322707E4/availability/state\",\"payload_available\": \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"state_topic\": \"edilkamin/322707E4/thermocouple_temperature/state\"}";
-  const char *jsonAutodiscoverPelletLevel PROGMEM = "{\"name\":\"Pellet Level\",\"unique_id\":\"322707E4_edilkamin_pellet_level\",\"icon\": \"mdi:grain\", \"device\":{ \"identifiers\":[ \"322707E4\" ]},\"availability\":{ \"topic\":\"edilkamin/322707E4/availability/state\", \"payload_available\":\"ONLINE\", \"payload_not_available\":\"OFFLINE\"},\"state_topic\":\"edilkamin/322707E4/pellet_level/state\"}";
-  const char *jsonAutodiscoverAutomaticMode PROGMEM = "{\"name\": \"Automatic Mode\",\"unique_id\": \"322707E4_edilkamin_automatic_mode\",\"icon\": \"mdi:refresh-auto\",\"optimistic\": \"true\", \"device\": {   \"identifiers\": [  \"322707E4\"   ]},\"availability\": {   \"topic\": \"edilkamin/322707E4/availability/state\",   \"payload_available\": \"ONLINE\",   \"payload_not_available\": \"OFFLINE\"},\"command_topic\": \"edilkamin/322707E4/automatic_mode/set\",\"state_topic\": \"edilkamin/322707E4/automatic_mode/state\",\"retain\": true }";
+  const char *jsonAutodiscover PROGMEM =
+      "{\"name\": \"Edilkamin\",\"unique_id\": "
+      "\"322707E4_edilkamin_climate\",\"icon\": \"mdi:gas-burner\", "
+      "\"optimistic\": \"true\", \"availability\": {\"topic\": "
+      "\"edilkamin/322707E4/availability/state\",\"payload_available\": "
+      "\"ONLINE\",\"payload_not_available\": "
+      "\"OFFLINE\"},\"fan_mode_command_topic\": "
+      "\"edilkamin/322707E4/fan_mode/set\",\"fan_mode_state_topic\": "
+      "\"edilkamin/322707E4/fan_mode/state\",\"fan_modes\": "
+      "[\"Auto\",\"20%\",\"40%\",\"60%\",\"80%\",\"100%\"],\"mode_command_"
+      "topic\": \"edilkamin/322707E4/hvac_mode/set\",\"mode_state_topic\": "
+      "\"edilkamin/322707E4/hvac_mode/state\",\"modes\": "
+      "[\"heat\",\"off\"],\"preset_mode_command_topic\": "
+      "\"edilkamin/322707E4/preset_mode/set\",\"preset_mode_state_topic\": "
+      "\"edilkamin/322707E4/preset_mode/state\",\"preset_modes\": "
+      "[\"Auto\",\"Man. P1\",\"Man. P2\",\"Man. P3\",\"Man. P4\",\"Man. "
+      "P5\"],\"min_temp\": 20,\"max_temp\": 30,\"precision\": 0.5,\"retain\": "
+      "true,\"temperature_command_topic\": "
+      "\"edilkamin/322707E4/target_temperature/"
+      "set\",\"temperature_state_topic\": "
+      "\"edilkamin/322707E4/target_temperature/"
+      "state\",\"current_temperature_topic\": "
+      "\"edilkamin/322707E4/temperature/state\",\"temp_step\": 0.5,\"device\": "
+      "{\"manufacturer\": \"Edilkamin\",\"identifiers\": "
+      "[\"322707E4\"],\"name\": \"Edilkamin\"}}";
+  const char *jsonAutodiscoverRelax PROGMEM =
+      "{\"name\": \"Relax\",\"unique_id\": "
+      "\"322707E4_edilkamin_relax\",\"icon\": "
+      "\"mdi:volume-off\",\"optimistic\": \"true\", \"device\": "
+      "{\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\": "
+      "\"edilkamin/322707E4/availability/state\",\"payload_available\": "
+      "\"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": "
+      "\"edilkamin/322707E4/relax/set\",\"state_topic\": "
+      "\"edilkamin/322707E4/relax/state\", \"retain\": true}";
+  // const char *jsonAutodiscoverAirkare PROGMEM = "{\"name\":
+  // \"Airkare\",\"unique_id\": \"322707E4_edilkamin_airkare\",\"device\":
+  // {\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\":
+  // \"edilkamin/322707E4/availability/state\",\"payload_available\":
+  // \"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\":
+  // \"edilkamin/322707E4/airkare/set\",\"state_topic\":
+  // \"edilkamin/322707E4/airkare/state\", \"retain\": true}";
+  const char *jsonAutodiscoverCronoMode PROGMEM =
+      "{\"name\": \"Chrono\",\"unique_id\": "
+      "\"322707E4_edilkamin_chrono_mode\",\"icon\": "
+      "\"mdi:clock-outline\",\"optimistic\": \"true\", \"device\": "
+      "{\"identifiers\": [\"322707E4\"] },\"availability\": {\"topic\": "
+      "\"edilkamin/322707E4/availability/state\",\"payload_available\": "
+      "\"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": "
+      "\"edilkamin/322707E4/chrono_mode/set\",\"state_topic\": "
+      "\"edilkamin/322707E4/chrono_mode/state\", \"retain\": true}";
+  const char *jsonAutodiscoverStandbyMode PROGMEM =
+      "{\"name\": \"Standby\",\"unique_id\": "
+      "\"322707E4_edilkamin_standby\",\"icon\": \"mdi:sleep\",\"optimistic\": "
+      "\"true\", \"device\": {\"identifiers\": [\"322707E4\"] "
+      "},\"availability\": {\"topic\": "
+      "\"edilkamin/322707E4/availability/state\",\"payload_available\": "
+      "\"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"command_topic\": "
+      "\"edilkamin/322707E4/standby/set\",\"state_topic\": "
+      "\"edilkamin/322707E4/standby/state\", \"retain\": true}";
+  const char *jsonAutodiscoverStatus PROGMEM =
+      "{\"name\":\"Status\",\"unique_id\":\"322707E4_edilkamin_status\","
+      "\"icon\": \"mdi:state-machine\", \"optimistic\": \"true\", \"device\":{ "
+      "\"identifiers\":[ \"322707E4\" ]},\"availability\":{ "
+      "\"topic\":\"edilkamin/322707E4/availability/state\", "
+      "\"payload_available\":\"ONLINE\", "
+      "\"payload_not_available\":\"OFFLINE\"},\"state_topic\":\"edilkamin/"
+      "322707E4/status/state\"}";
+  const char *jsonAutodiscoverBluetooth PROGMEM =
+      "{\"name\": \"Bluetooth connect\",\"unique_id\": "
+      "\"322707E4_edilkamin_bluetooth\",\"icon\": \"mdi:bluetooth\", "
+      "\"device\": {\"identifiers\": [\"322707E4\"]},\"command_topic\": "
+      "\"edilkamin/322707E4/bluetooth/set\",\"state_topic\": "
+      "\"edilkamin/322707E4/bluetooth/state\",\"retain\": true}";
+  const char *jsonAutodiscoverThermocouple PROGMEM =
+      "{\"name\": \"Exhaust Temperature\",\"unique_id\": "
+      "\"322707E4_edilkamin_thermocouple_temperature\",\"device_class\": "
+      "\"temperature\",\"unit_of_measurement\": \"°C\",\"device\": "
+      "{\"identifiers\": [\"322707E4\"]},\"availability\": {\"topic\": "
+      "\"edilkamin/322707E4/availability/state\",\"payload_available\": "
+      "\"ONLINE\",\"payload_not_available\": \"OFFLINE\"},\"state_topic\": "
+      "\"edilkamin/322707E4/thermocouple_temperature/state\"}";
+  const char *jsonAutodiscoverPelletLevel PROGMEM =
+      "{\"name\":\"Pellet "
+      "Level\",\"unique_id\":\"322707E4_edilkamin_pellet_level\",\"icon\": "
+      "\"mdi:grain\", \"device\":{ \"identifiers\":[ \"322707E4\" "
+      "]},\"availability\":{ "
+      "\"topic\":\"edilkamin/322707E4/availability/state\", "
+      "\"payload_available\":\"ONLINE\", "
+      "\"payload_not_available\":\"OFFLINE\"},\"state_topic\":\"edilkamin/"
+      "322707E4/pellet_level/state\"}";
+  const char *jsonAutodiscoverAutomaticMode PROGMEM =
+      "{\"name\": \"Automatic Mode\",\"unique_id\": "
+      "\"322707E4_edilkamin_automatic_mode\",\"icon\": "
+      "\"mdi:refresh-auto\",\"optimistic\": \"true\", \"device\": {   "
+      "\"identifiers\": [  \"322707E4\"   ]},\"availability\": {   \"topic\": "
+      "\"edilkamin/322707E4/availability/state\",   \"payload_available\": "
+      "\"ONLINE\",   \"payload_not_available\": "
+      "\"OFFLINE\"},\"command_topic\": "
+      "\"edilkamin/322707E4/automatic_mode/set\",\"state_topic\": "
+      "\"edilkamin/322707E4/automatic_mode/state\",\"retain\": true }";
 
   void aesEncrypt(char *plainText, byte *output);
   void aesDecrypt(byte *cryptedText, byte *output);
   void getNtpTime();
   void getTimestamp(byte *ts);
-  //void hexDebug(byte *data, size_t length, char *returnStr);
+  // void hexDebug(byte *data, size_t length, char *returnStr);
   void crc16modbus(byte *msg, size_t len, byte *crcOut);
   void createBtPacket(byte *cmd, size_t len, byte *btPacket);
   void getBtContent(byte *rcvd, size_t len, structDatagram *d);
