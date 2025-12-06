@@ -7,6 +7,9 @@ ENV_NAME="wemos_d1_mini32"
 # Output directory for the WebFlasher files
 WEBFLASH_DIR="webflash"
 
+# Base URL of your GitHub Pages site (used only for printing the final URL)
+GHPAGES_BASE_URL="https://netmb.github.io/Edilkamin_BT"
+
 # Determine firmware version (argument or Git tag/commit)
 VERSION="${1:-}"
 
@@ -78,7 +81,7 @@ cp "$FIRMWARE"  "$WEBFLASH_DIR/firmware.bin"
 echo "Copied build files into $WEBFLASH_DIR/"
 echo
 
-# Generate manifest.json for esp-web-tools / web.esphome.io
+# Generate/update manifest.json for esp-web-tools / GitHub Pages
 MANIFEST_PATH="$WEBFLASH_DIR/manifest.json"
 
 cat > "$MANIFEST_PATH" <<EOF
@@ -101,6 +104,9 @@ EOF
 echo "Generated manifest.json at $MANIFEST_PATH"
 echo
 
+# Do NOT touch webflash/index.html here.
+# If it exists, it will be served by GitHub Pages unchanged.
+
 # Commit and push changes to Git only if something changed
 if git diff --quiet && git diff --cached --quiet; then
   echo "No changes detected. Nothing to commit."
@@ -112,12 +118,23 @@ git add "$WEBFLASH_DIR/bootloader.bin" \
         "$WEBFLASH_DIR/firmware.bin" \
         "$MANIFEST_PATH"
 
+# Only add index.html if it is already tracked or you want it auto-added:
+if [[ -f "$WEBFLASH_DIR/index.html" ]]; then
+  git add "$WEBFLASH_DIR/index.html" || true
+fi
+
 git commit -m "Update webflash firmware ($VERSION)"
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 git push origin "$CURRENT_BRANCH"
 
+WEBFLASH_URL="$GHPAGES_BASE_URL/$WEBFLASH_DIR/"
+
 echo
-echo "Done. WebFlasher URL:"
-echo "https://web.esphome.io/?manifest=https://raw.githubusercontent.com/netmb/Edilkamin_BT/$CURRENT_BRANCH/$WEBFLASH_DIR/manifest.json"
+echo "Done."
+echo "GitHub Pages WebFlasher URL:"
+echo "  $WEBFLASH_URL"
+echo
+echo "Manifest URL (for debugging):"
+echo "  $WEBFLASH_URL/manifest.json"
 echo

@@ -666,7 +666,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 };
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   // Check if Boot Button (GPIO 0) is pressed for factory reset
   pinMode(0, INPUT_PULLUP);
