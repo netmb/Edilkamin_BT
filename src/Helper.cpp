@@ -77,12 +77,10 @@ void Helper::aesDecrypt(byte *cryptedText, byte *output) {
   mbedtls_aes_free(&aes);
 }
 
-void Helper::getNtpTime() {
+void Helper::getNtpTime(const char *ntpServer, long gmtOffset_sec) {
   Serial.println("Fetching time from NTP...");
   time_t now;
   struct tm new_ts;
-  const char *ntpServer = NTP_SERVER;
-  const long gmtOffset_sec = NTP_GMT_OFFSET;
   const int daylightOffset_sec = 0;
 
   // Config time using NTP

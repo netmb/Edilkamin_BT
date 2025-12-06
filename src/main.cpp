@@ -1,9 +1,12 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <Helper.h>
+#include <LittleFS.h>
 #include <NimBLEDevice.h>
 #include <PubSubClient.h>
 #include <TelnetStream.h>
 #include <WiFi.h>
+#include <WiFiManager.h>
 
 #define DEBUG 1 // 0 = Off, 1 = Local, 2 = Telnet
 #if DEBUG == 1
@@ -18,6 +21,22 @@
 #endif
 
 const char *hostname PROGMEM = "edilkaminble";
+
+char mqtt_server[40];
+char mqtt_port[6] = "1883";
+char mqtt_user[32];
+char mqtt_pass[32];
+char ntp_server[40] = "pool.ntp.org";
+char ntp_offset[6] = "7200";
+
+// Flag for saving data
+bool shouldSaveConfig = false;
+
+// Callback notifying us of the need to save config
+void saveConfigCallback() {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
 
 enum states {
   START,
@@ -511,7 +530,8 @@ void mqttCallback(String topic, byte *message, unsigned int length) {
 // MQTT reconnect
 void mqttReconnect() {
   debug(F("Attempting MQTT connection..."));
-  if (mqttClient.connect(hostname, MQTT_USER, MQTT_PASSWORD)) {
+  if (mqttClient.connect(hostname, mqtt_user, mqtt_pass)) {
+    msLastMqttConnect = millis(); // Reset watchdog on successful connect
     debugln(F("Connected. Subscripting to topics..."));
     mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/hvac_mode/set", true);
@@ -645,30 +665,129 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
   }
 };
 
-void initWiFi() {
-  WiFi.setHostname(hostname);
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.persistent(true);
-  WiFi.begin(WLAN_SSID, WLAN_PASSWORD);
-  debug(F("Connecting to WiFi .."));
-  while (WiFi.status() != WL_CONNECTED) {
-    debug('.');
-    delay(1000);
-  }
-  debug(WiFi.localIP());
-  debug(", ");
-  debugln(WiFi.getHostname());
-}
-
 void setup() {
   Serial.begin(9600);
-  initWiFi();
-  h.getNtpTime();
+
+  // Check if Boot Button (GPIO 0) is pressed for factory reset
+  pinMode(0, INPUT_PULLUP);
+  // Wait to ensure it's a deliberate press (simple debounce/hold check)
+  if (digitalRead(0) == LOW) {
+    delay(500); // Wait 500ms
+    if (digitalRead(0) == LOW) {
+      Serial.println("Factory Reset initiated...");
+
+      // Mount FS to delete config
+      if (LittleFS.begin(true)) {
+        if (LittleFS.exists("/config.json")) {
+          LittleFS.remove("/config.json");
+          Serial.println("Deleted config.json");
+        }
+        LittleFS.end();
+      }
+
+      WiFiManager wm;
+      wm.resetSettings();
+      Serial.println("WiFiManager settings reset");
+
+      Serial.println("Restarting...");
+      delay(1000);
+      ESP.restart();
+    }
+  }
+
+  // Mount LittleFS
+  if (LittleFS.begin(true)) {
+    Serial.println("mounted file system");
+    if (LittleFS.exists("/config.json")) {
+      // file exists, reading and loading
+      Serial.println("reading config file");
+      File configFile = LittleFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("opened config file");
+        JsonDocument json;
+        DeserializationError error = deserializeJson(json, configFile);
+        if (!error) {
+          Serial.println("\nparsed json");
+          strcpy(mqtt_server, json["mqtt_server"]);
+          strcpy(mqtt_port, json["mqtt_port"]);
+          strcpy(mqtt_user, json["mqtt_user"]);
+          strcpy(mqtt_pass, json["mqtt_pass"]);
+          strcpy(ntp_server, json["ntp_server"]);
+          strcpy(ntp_offset, json["ntp_offset"]);
+        } else {
+          Serial.println("failed to load json config");
+        }
+        configFile.close();
+      }
+    }
+  } else {
+    Serial.println("failed to mount FS");
+  }
+
+  WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server,
+                                          40);
+  WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
+  WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 32);
+  WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 32);
+  WiFiManagerParameter custom_ntp_server("ntp", "ntp server", ntp_server, 40);
+  WiFiManagerParameter custom_ntp_offset("ntp_offset", "ntp offset", ntp_offset,
+                                         6);
+
+  WiFiManager wifiManager;
+
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
+  wifiManager.addParameter(&custom_mqtt_server);
+  wifiManager.addParameter(&custom_mqtt_port);
+  wifiManager.addParameter(&custom_mqtt_user);
+  wifiManager.addParameter(&custom_mqtt_pass);
+  wifiManager.addParameter(&custom_ntp_server);
+  wifiManager.addParameter(&custom_ntp_offset);
+
+  wifiManager.setHostname(hostname);
+  wifiManager.setTitle("Configuration");
+
+  if (!wifiManager.autoConnect("Edilkamin_BT_AP")) {
+    Serial.println("failed to connect and hit timeout");
+    delay(3000);
+    ESP.restart();
+    delay(5000);
+  }
+
+  Serial.println("connected.");
+
+  strcpy(mqtt_server, custom_mqtt_server.getValue());
+  strcpy(mqtt_port, custom_mqtt_port.getValue());
+  strcpy(mqtt_user, custom_mqtt_user.getValue());
+  strcpy(mqtt_pass, custom_mqtt_pass.getValue());
+  strcpy(ntp_server, custom_ntp_server.getValue());
+  strcpy(ntp_offset, custom_ntp_offset.getValue());
+
+  if (shouldSaveConfig) {
+    Serial.println("saving config");
+    JsonDocument json;
+    json["mqtt_server"] = mqtt_server;
+    json["mqtt_port"] = mqtt_port;
+    json["mqtt_user"] = mqtt_user;
+    json["mqtt_pass"] = mqtt_pass;
+    json["ntp_server"] = ntp_server;
+    json["ntp_offset"] = ntp_offset;
+
+    File configFile = LittleFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("failed to open config file for writing");
+    }
+
+    serializeJson(json, configFile);
+    configFile.close();
+    Serial.println("config saved");
+  }
+
+  h.getNtpTime(ntp_server, atol(ntp_offset));
   TelnetStream.begin();
-  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setServer(mqtt_server, atoi(mqtt_port));
   mqttClient.setBufferSize(2048);
   mqttClient.setCallback(mqttCallback);
+  msLastMqttConnect = millis(); // Reset MQTT watchdog timer
   msLastBleConnect = millis();
   BLEDevice::init("");
   BLEScan *pBLEScan = BLEDevice::getScan();
@@ -726,8 +845,8 @@ void loop() {
   if (!doBtConnect && bleConnected) {
     if (pClient->isConnected()) {
       pClient->disconnect();
-      // mqttClient.publish("edilkamin/322707E4/availability/state", "OFFLINE",
-      // true);
+      // mqttClient.publish("edilkamin/322707E4/availability/state",
+      // "OFFLINE", true);
       mqttClient.publish("edilkamin/322707E4/bluetooth/state", "OFF", true);
     }
   } else if (!bleConnected && doBtConnect) {

@@ -310,7 +310,7 @@ public:
 
   void aesEncrypt(char *plainText, byte *output);
   void aesDecrypt(byte *cryptedText, byte *output);
-  void getNtpTime();
+  void getNtpTime(const char *ntpServer, long gmtOffset_sec);
   void getTimestamp(byte *ts);
   // void hexDebug(byte *data, size_t length, char *returnStr);
   void crc16modbus(byte *msg, size_t len, byte *crcOut);
