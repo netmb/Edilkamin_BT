@@ -530,6 +530,10 @@ void mqttCallback(String topic, byte *message, unsigned int length) {
 // MQTT reconnect
 void mqttReconnect() {
   debug(F("Attempting MQTT connection..."));
+  debug(F(" Server: "));
+  debug(mqtt_server);
+  debug(F(" User: "));
+  debugln(mqtt_user);
   if (mqttClient.connect(hostname, mqtt_user, mqtt_pass)) {
     msLastMqttConnect = millis(); // Reset watchdog on successful connect
     debugln(F("Connected. Subscripting to topics..."));
@@ -823,7 +827,8 @@ void loop() {
   // MQTT Watchdog - Restart ESP if no connect to MQTT-Server
   if (!mqttClient.loop() || !mqttClient.connected()) {
     mqttReconnect();
-    if (currentMillis - msLastMqttConnect >= connectTimeout) {
+    if (!mqttClient.connected() &&
+        (currentMillis - msLastMqttConnect >= connectTimeout)) {
       msLastMqttConnect = currentMillis;
       debugln(F("MQTT not connected watchdog triggered - ESP Restart..."));
       ESP.restart();
