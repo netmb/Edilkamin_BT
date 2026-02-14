@@ -1,6 +1,6 @@
 {
   "name": "Edilkamin_BT Firmware",
-  "version": "9681485",
+  "version": "9d5ff5c",
   "builds": [
     {
       "chipFamily": "ESP32",
