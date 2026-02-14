@@ -56,6 +56,8 @@ bool doBtConnect = true;
 bool btResponse = false;
 byte *btData;
 bool btWriteRequest = false;
+uint8_t btRetryCount = 0;
+const uint8_t btMaxRetries = 1;
 static BLEUUID serviceUUID("abf0");
 static BLEUUID charUUIDWrite("abf1");
 static BLEUUID charUUIDRead("abf2");
@@ -74,7 +76,7 @@ unsigned long writeTimestamp = 0;
 unsigned long bleLastConnect = 0;
 unsigned long bleLastSwitchOff = 0;
 const long queryInterval = 2000;
-const long responseTimeout = 1000;
+const long responseTimeout = 2000;
 const long connectTimeout = 1000 * 30;     // 30 sec
 const long bleConnectTimeout = 1000 * 300; // 5 min
 const long bleOnTime = 1000 * 30;          // 30 sec
@@ -167,22 +169,23 @@ bool writeQueueHasElements() {
   return false;
 }
 
+static byte lastBtPacket[32];
+
 void writeBtData() {
   for (uint8_t i = 0; i < btWriteQueueLength; i++) {
     if (btWriteQueue[i].name != Helper::NO_CMD) {
       currentOp = btWriteQueue[i].name;
       debug(F("-> Write, queue-index:"));
-      byte btPacket[32];
       debug(i);
       debug(F(", "));
       debug(F("cmd:"));
       debug(currentOp);
       debug(", data:");
-      h.createBtPacket(btWriteQueue[i].cmd, 6, btPacket);
+      h.createBtPacket(btWriteQueue[i].cmd, 6, lastBtPacket);
       hexDebug(btWriteQueue[i].cmd, 6);
       debugln();
       btWriteQueue[i].name = Helper::NO_CMD;
-      pRemoteCharacteristicWrite->writeValue(btPacket, 32);
+      pRemoteCharacteristicWrite->writeValue(lastBtPacket, 32);
       break;
     }
   }
@@ -581,10 +584,13 @@ void mqttReconnect() {
   //}
 }
 
+static uint8_t btDataBuffer[32];
+
 static void bleNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic,
                               uint8_t *pData, size_t length, bool isNotify) {
+  memcpy(btDataBuffer, pData, min(length, (size_t)32));
   btResponse = true;
-  btData = pData;
+  btData = btDataBuffer;
 }
 
 class MyClientCallback : public BLEClientCallbacks {
@@ -597,19 +603,23 @@ class MyClientCallback : public BLEClientCallbacks {
   }
 };
 
+static MyClientCallback myClientCallback;
+
 bool connectToServer() {
   debug(F("Forming a connection to "));
   debugln(myDevice->getAddress().toString().c_str());
 
-  pClient = BLEDevice::createClient();
-  debugln(F(" - Created client"));
+  if (pClient == nullptr) {
+    pClient = BLEDevice::createClient();
+    debugln(F(" - Created client"));
+    pClient->setClientCallbacks(&myClientCallback);
+  }
 
-  pClient->setClientCallbacks(new MyClientCallback());
-
-  // Connect to the remove BLE Server.
-  pClient->connect(myDevice); // if you pass BLEAdvertisedDevice instead of
-                              // address, it will be recognized type of peer
-                              // device address (public or private)
+  // Connect to the remote BLE Server.
+  if (!pClient->connect(myDevice)) {
+    debugln(F(" - Failed to connect to server"));
+    return false;
+  }
   debugln(F(" - Connected to server"));
 
   // Obtain a reference to the service we are after in the remote BLE server.
@@ -634,10 +644,6 @@ bool connectToServer() {
     return false;
   }
   debugln(F(" - Found our characteristic"));
-
-  if (pRemoteCharacteristicWrite->canNotify()) {
-    pRemoteCharacteristicRead->subscribe(true, bleNotifyCallback, false);
-  }
 
   if (pRemoteCharacteristicRead->canNotify()) {
     pRemoteCharacteristicRead->subscribe(true, bleNotifyCallback, false);
@@ -884,8 +890,7 @@ void loop() {
       status = START;
     } else if (bleConnected) {
       status = DO_NEXT_QUERY;
-    }
-    if (!bleConnected && currentMillis - bleLastSwitchOff >= bleOffTime) {
+    } else if (!bleConnected && currentMillis - bleLastSwitchOff >= bleOffTime) {
       debugln(F("Bluetooth wake up..."));
       status = DO_NEXT_QUERY;
     } else if (!bleConnected) {
@@ -903,17 +908,30 @@ void loop() {
     break;
   case BT_WRITE_REQUEST:
     btResponse = false;
+    btRetryCount = 0;
     writeBtData();
     writeTimestamp = currentMillis;
     status = AWAIT_BT_RESPONSE;
     break;
   case AWAIT_BT_RESPONSE:
-    if (!btResponse && currentMillis - writeTimestamp >= responseTimeout) {
-      debugln(F("Bluetooth Response Timeout !"));
-      status = START;
-    }
-    if (btResponse)
+    if (btResponse) {
       status = PROCESSING_BT_RESPONSE;
+    } else if (currentMillis - writeTimestamp >= responseTimeout) {
+      if (btRetryCount < btMaxRetries) {
+        btRetryCount++;
+        debug(F("Bluetooth Response Timeout, retry "));
+        debug(btRetryCount);
+        debug(F("/"));
+        debugln(btMaxRetries);
+        btResponse = false;
+        pRemoteCharacteristicWrite->writeValue(lastBtPacket, 32);
+        writeTimestamp = currentMillis;
+      } else {
+        debug(F("Bluetooth Response Timeout for cmd "));
+        debugln(currentOp);
+        status = START;
+      }
+    }
     break;
   case PROCESSING_BT_RESPONSE:
     processBtResponseData(btData);
