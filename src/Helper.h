@@ -223,7 +223,7 @@ public:
       "\"edilkamin/322707E4/preset_mode/set\",\"preset_mode_state_topic\": "
       "\"edilkamin/322707E4/preset_mode/state\",\"preset_modes\": "
       "[\"Auto\",\"Man. P1\",\"Man. P2\",\"Man. P3\",\"Man. P4\",\"Man. "
-      "P5\"],\"min_temp\": 20,\"max_temp\": 30,\"precision\": 0.5,\"retain\": "
+      "P5\"],\"min_temp\": 15,\"max_temp\": 30,\"precision\": 0.5,\"retain\": "
       "true,\"temperature_command_topic\": "
       "\"edilkamin/322707E4/target_temperature/"
       "set\",\"temperature_state_topic\": "
