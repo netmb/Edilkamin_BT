@@ -319,10 +319,12 @@ void processBtResponseData(byte *btData) {
       }
     } else if (currentOp == Helper::READ_MAIN_ENV_TEMP) {
       int r = (int16_t)(0 << 8) + d.payload[4];
-      float x = r * 0.1;
-      char msg_out[10];
-      dtostrf(x, 2, 1, msg_out);
-      mqttClient.publish("edilkamin/322707E4/temperature/state", msg_out);
+      if (r > 0) {
+        float x = r * 0.1;
+        char msg_out[10];
+        dtostrf(x, 2, 1, msg_out);
+        mqttClient.publish("edilkamin/322707E4/temperature/state", msg_out);
+      }
     } else if (currentOp == Helper::READ_THERMOCOUPLE_TEMP) {
       uint16_t r = (d.payload[3] << 8) + d.payload[4];
       r = (r * 0.1) + 0.5;
