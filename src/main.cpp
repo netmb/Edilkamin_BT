@@ -402,8 +402,12 @@ void processBtResponseData(byte *btData) {
       else if (d.payload[3] == 0 && d.payload[4] == 0) {
         mqttClient.publish("edilkamin/322707E4/status/state", "Off");
         mqttClient.publish("edilkamin/322707E4/hvac_mode/state", "off");
-      } else
-        mqttClient.publish("edilkamin/322707E4/status/state", "-");
+      } else {
+        debug(F("Unknown status combination: "));
+        debug(d.payload[3]);
+        debug(F("/"));
+        debugln(d.payload[4]);
+      }
     } else if (currentOp == Helper::READ_WARNING_FLAGS) {
       if (d.payload[4] == 0) // Pellet ok
         mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Ok");
