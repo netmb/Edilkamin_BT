@@ -21,10 +21,14 @@ for name in ('bootloader.bin', 'firmware.bin'):
 assert (web / 'firmware.bin').stat().st_size <= 0x250000
 base = {'name': 'Edilkamin_BT Firmware', 'version': version,
         'new_install_prompt_erase': True, 'new_install_improv_wait_time': 0}
-for filename, image, offset in [('manifest.json', 'firmware.bin', 65536),
-                                 ('manifest-full.json', 'merged-firmware.bin', 0)]:
-    manifest = dict(base, builds=[{'chipFamily': 'ESP32',
-                                  'parts': [{'path': image, 'offset': offset}]}])
+# The single visible installer uses the original multipart layout. Keeping the
+# gaps unwritten preserves NVS/LittleFS when the user does not choose erase.
+standard_parts = [{'path': 'bootloader.bin', 'offset': 4096},
+                  {'path': 'partitions.bin', 'offset': 32768},
+                  {'path': 'firmware.bin', 'offset': 65536}]
+for filename, parts in [('manifest.json', standard_parts),
+                        ('manifest-full.json', [{'path': 'merged-firmware.bin', 'offset': 0}])]:
+    manifest = dict(base, builds=[{'chipFamily': 'ESP32', 'parts': parts}])
     (web / filename).write_text(json.dumps(manifest, indent=2) + '\n')
 merged = (web / 'merged-firmware.bin').read_bytes()
 for name, offset in [('bootloader.bin', 0x1000), ('partitions.bin', 0x8000), ('firmware.bin', 0x10000)]:

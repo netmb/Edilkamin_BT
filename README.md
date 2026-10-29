@@ -15,9 +15,10 @@ implementation passed the cold function test on one single-fan stove on
 2026-10-29, including independent register readback and restoration. The final
 build changes only the version identifier relative to the tested build. Fan 2/3 hardware, combustion and long-duration stability remain
 untested. See [hardware validation](docs/hardware-validation.json).
-Choose **Update** for an existing installation with this repository's partition
-layout; do not select erase if you want to preserve configuration. **New install**
-uses the merged image and requires Wi-Fi/MQTT configuration afterwards.
+The web page provides one installation button, as before. The installer writes
+bootloader, partition table and application. With the existing partition layout,
+leave erase disabled to preserve WLAN/MQTT configuration. New devices require
+Wi-Fi/MQTT configuration afterwards.
 
 Install Firmware with the following URL: https://netmb.github.io/Edilkamin_BT/webflash/
 
@@ -174,11 +175,11 @@ commit, push or flash. Set `PIO_CMD`, `PIO_PYTHON` and `PLATFORMIO_CORE_DIR` whe
 using a custom PlatformIO installation. The Python interpreter needs the
 esptool dependencies supplied by PlatformIO.
 
-The default `webflash/manifest.json` writes only the application at `0x10000`.
-`manifest-full.json` installs a merged DIO/40MHz/4MB image including bootloader,
-partitions and OTA initialization. New-install images overwrite the NVS area;
-use the update option to preserve an existing configuration. Both installation
-dialogs expose the erase choice. `build-info.json` identifies source hashes,
+The default `webflash/manifest.json` writes bootloader at `0x1000`, the partition
+table at `0x8000` and the application at `0x10000`, matching the original installer.
+It leaves NVS/LittleFS unwritten unless erase is selected in the installation
+dialog. The separately generated `manifest-full.json` and merged image include
+OTA initialization and overwrite NVS; they are not used by the web page. `build-info.json` identifies source hashes,
 binary hashes and the validation scope for that exact firmware SHA-256. The firmware reports
 its version over serial and `edilkamin/322707E4/firmware_version/state`.
 

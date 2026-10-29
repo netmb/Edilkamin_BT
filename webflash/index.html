@@ -1,56 +1,13 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Edilkamin_BT – Firmware installieren</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edilkamin_BT – Web Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
-  <style>
-    body { font: 17px/1.6 system-ui,sans-serif; color:#1f2937; background:#f6f7f9; max-width:760px; margin:3rem auto; padding:0 1.3rem; }
-    section { background:white; border:1px solid #dce1e7; border-radius:12px; padding:1.4rem; margin:1.2rem 0; }
-    h1,h2 { line-height:1.2; } h2 { font-size:1.25rem; }
-    .notice { border-left:4px solid #b7791f; padding-left:1rem; }
-    button { background:#205b9e; color:white; border:0; border-radius:6px; padding:.8rem 1.2rem; font:inherit; cursor:pointer; }
-    a { color:#205b9e; } code { font-size:.9em; }
-  </style>
 </head>
 <body>
-  <h1>Edilkamin_BT</h1>
-  <p>Firmware für Wemos D1 Mini ESP32 (4 MB).</p>
-  <p id="version">Version wird geladen …</p>
-  <p class="notice"><strong>Finale Version:</strong> Fan 2/3, korrigierte Steuerungen und zusätzliche MQTT-/HA-Sensoren.
-    Build und simulierte Tests bestanden; die unveränderte Steuerung wurde an einem Ein-Fan-Ofen kalt geprüft.
-    Fan 2/3 am Gerät, Verbrennungsbetrieb und Langzeitstabilität sind noch ungetestet.
-    Die Bluetooth-Pausen bleiben erhalten. <code>pellet_level</code> meldet jetzt <code>Reserve</code> statt <code>Empty</code>.</p>
-  <section>
-    <h2>Vorhandene Installation aktualisieren</h2>
-    <p>Für einen ESP32 mit der bisherigen Edilkamin_BT-Partitionierung. Schreibt nur die Anwendung.
-      Im Installationsdialog <strong>„Erase device“ nicht auswählen</strong>, damit WLAN-/MQTT-Einstellungen erhalten bleiben.</p>
-    <esp-web-install-button manifest="./manifest.json">
-      <button slot="activate">Verbinden und aktualisieren</button>
-      <span slot="unsupported">Dieser Browser unterstützt Web Serial nicht. Öffne die Seite in einem Browser mit Web-Serial-Unterstützung.</span>
-    </esp-web-install-button>
-  </section>
-  <section>
-    <h2>Neuinstallation</h2>
-    <p>Für ein neues Gerät oder eine andere Partitionierung. Installiert Bootloader, Partitionen und Firmware.
-      <strong>WLAN-/MQTT-Zugang neu einrichten.</strong> Für eine saubere Neuinstallation „Erase device“ auswählen.</p>
-    <esp-web-install-button manifest="./manifest-full.json">
-      <button slot="activate">Neu installieren</button>
-    </esp-web-install-button>
-  </section>
-  <p>Per USB-Datenkabel verbinden und andere serielle Monitore vor dem Installieren schließen.
-    Falls die Verbindung scheitert, BOOT nur für den Verbindungsaufbau gedrückt halten und danach loslassen.</p>
-  <p>Nach einer Neuinstallation das WLAN <code>Edilkamin_BT_AP</code> öffnen und WLAN sowie MQTT konfigurieren.
-    Der erste Funktionstest erfolgt mit versorgter Ofenelektronik und Heizbetrieb OFF.</p>
-  <p><a href="https://github.com/netmb/Edilkamin_BT#readme">Anleitung und MQTT-Topics</a> ·
-     <a href="../docs/hardware-validation.json">Gerätetest</a> · <a href="./build-info.json">Build-Prüfsummen</a> · <a href="./firmware.bin">Firmware-Binary</a></p>
-  <script>
-    fetch('./manifest.json', {cache:'no-store'}).then(r => {
-      if (!r.ok) throw new Error('manifest');
-      return r.json();
-    }).then(m => { document.querySelector('#version').textContent = 'Version: ' + m.version; })
-      .catch(() => { document.querySelector('#version').textContent = 'Version derzeit nicht abrufbar.'; });
-  </script>
+  <h1>Edilkamin_BT – Firmware Installer</h1>
+  <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
 </body>
 </html>
