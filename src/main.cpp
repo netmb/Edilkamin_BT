@@ -1,6 +1,12 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Helper.h>
+#include "FanControl.h"
+#include "FanDiscovery.h"
+#include "ModbusResponse.h"
+#include "StoveProtocol.h"
+#include "SensorDiscovery.h"
+#include "FirmwareVersion.h"
 #include <LittleFS.h>
 #include <NimBLEDevice.h>
 #include <PubSubClient.h>
@@ -56,8 +62,6 @@ bool doBtConnect = true;
 bool btResponse = false;
 byte *btData;
 bool btWriteRequest = false;
-uint8_t btRetryCount = 0;
-const uint8_t btMaxRetries = 1;
 static BLEUUID serviceUUID("abf0");
 static BLEUUID charUUIDWrite("abf1");
 static BLEUUID charUUIDRead("abf2");
@@ -82,9 +86,26 @@ const long bleConnectTimeout = 1000 * 300; // 5 min
 const long bleOnTime = 1000 * 30;          // 30 sec
 const long bleOffTime = 1000 * 120;        // 2 min
 
+FanControl fans;
+bool fanDiscoveryDirty = true;
+bool fan1PowerValid = false;
+bool fan1PowerFresh = false;
+// Bootstrap reads run once per connection, independently of the rotating poll.
+const uint8_t fanRefreshComplete = 4;
+uint8_t fanRefreshStep = fanRefreshComplete;
+volatile bool bleDisconnected = false;
 byte currentFan1Level = 0;
 byte currentPowerLevel = 0;
 bool automatic = false;
+StoveProtocol::ControlTransaction controlTransaction;
+Helper::btCmds transactionOp = Helper::NO_CMD;
+bool sensorDiscoveryDirty = true;
+bool sensorSeen[SensorDiscovery::Count] = {};
+bool sensorValid[SensorDiscovery::Count] = {};
+char sensorValues[SensorDiscovery::Count][32] = {};
+unsigned long sensorUpdated[SensorDiscovery::Count] = {};
+// Polls span several BLE windows; stale data must eventually become unavailable.
+const unsigned long sensorMaxAge = 10UL * 60 * 1000;
 
 struct btWriteMapping {
   Helper::btCmds name;
@@ -93,11 +114,7 @@ struct btWriteMapping {
 
 uint8_t btWriteQueueIndex = 0;
 const uint8_t btWriteQueueLength = 10;
-btWriteMapping btWriteQueue[btWriteQueueLength] = {
-    {Helper::NO_CMD, 0}, {Helper::NO_CMD, 0}, {Helper::NO_CMD, 0},
-    {Helper::NO_CMD, 0}, {Helper::NO_CMD, 0}, {Helper::NO_CMD, 0},
-    {Helper::NO_CMD, 0}, {Helper::NO_CMD, 0}, {Helper::NO_CMD, 0},
-    {Helper::NO_CMD, 0}};
+btWriteMapping btWriteQueue[btWriteQueueLength] = {};
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -108,8 +125,11 @@ struct queryLookup {
   const byte *cmd;
 };
 uint8_t queryIndex = 0;
-const uint8_t queryQueueElements = 11;
 const queryLookup queryQueue[] = {
+    {Helper::READ_FIREPLACE_COMMANDS, h.readFireplaceCommands},
+    {Helper::READ_ALARM, h.readAlarm},
+    {Helper::READ_CANALIZED_2, h.readCanalized2},
+    {Helper::READ_CANALIZED_3, h.readCanalized3},
     {Helper::READ_POWER, h.readPower},
     {Helper::READ_AUTOMATIC, h.readAutomatic},
     {Helper::READ_ON_OFF_CHRONO, h.readOnOffChrono},
@@ -117,10 +137,117 @@ const queryLookup queryQueue[] = {
     {Helper::READ_THERMOCOUPLE_TEMP, h.readThermocoupleTemperature},
     {Helper::READ_TEMPERATURE, h.readTemperature},
     {Helper::READ_FAN, h.readFan},
+    {Helper::READ_NUMBER_FAN, h.readNumberFan},
+    {Helper::READ_FAN_23, h.readFan23},
     {Helper::READ_RELAX, h.readRelax},
     {Helper::READ_FIREPLACE_MAIN_STATUS, h.readFireplaceMainStatus},
     {Helper::READ_STANDBY_STATUS, h.readStandbyStatus},
     {Helper::READ_WARNING_FLAGS, h.readWarningFlags}};
+const size_t queryQueueElements = sizeof(queryQueue) / sizeof(queryQueue[0]);
+
+void publishFanAvailability() {
+  for (uint8_t fan = 2; fan <= 3; ++fan) {
+    char topic[80];
+    snprintf(topic, sizeof(topic), "edilkamin/322707E4/fan%u_mode/availability", fan);
+    mqttClient.publish(topic, fans.canAccept(fan) ? "ONLINE" : "OFFLINE", true);
+  }
+}
+
+void publishExtraFanStates() {
+  for (uint8_t fan = 2; fan <= 3; ++fan) {
+    if (!fans.hasFan(fan))
+      continue;
+    char topic[80];
+    snprintf(topic, sizeof(topic), "edilkamin/322707E4/fan%u_mode/state", fan);
+    const byte level = fan == 2 ? fans.fan2() : fans.fan3();
+    mqttClient.publish(topic, fans.pairValid() ? FanControl::mode(level) : "None",
+                       true);
+  }
+  publishFanAvailability();
+}
+
+void publishFanDiscovery() {
+  if (!mqttClient.connected())
+    return;
+  JsonDocument climate;
+  if (!FanDiscovery::climate(climate, h.jsonAutodiscover, fans))
+    return;
+  String payload;
+  serializeJson(climate, payload);
+  bool success = mqttClient.publish(
+      "homeassistant/climate/edilkamin_322707E4/config", payload.c_str(), true);
+  for (uint8_t fan = 2; fan <= 3; ++fan) {
+    char configTopic[96];
+    snprintf(configTopic, sizeof(configTopic),
+             "homeassistant/select/edilkamin_322707E4_fan%u/config", fan);
+    // Do not delete retained entities merely because detection is not ready.
+    if (!fans.equipmentKnown())
+      continue;
+    if (!fans.hasFan(fan)) {
+      success = mqttClient.publish(configTopic, "", true) && success;
+      char stateTopic[80];
+      snprintf(stateTopic, sizeof(stateTopic),
+               "edilkamin/322707E4/fan%u_mode/state", fan);
+      success = mqttClient.publish(stateTopic, "", true) && success;
+      continue;
+    }
+    JsonDocument config;
+    FanDiscovery::extraFan(config, fan);
+    payload = "";
+    serializeJson(config, payload);
+    success = mqttClient.publish(configTopic, payload.c_str(), true) && success;
+  }
+  fanDiscoveryDirty = !success;
+  publishExtraFanStates();
+}
+
+void publishSensor(SensorDiscovery::Id id, const char *value) {
+  if (!sensorSeen[id]) sensorDiscoveryDirty = true;
+  sensorSeen[id] = sensorValid[id] = true;
+  sensorUpdated[id] = millis();
+  snprintf(sensorValues[id], sizeof(sensorValues[id]), "%s", value);
+  char topic[100];
+  SensorDiscovery::topic(topic, sizeof(topic), id, "state");
+  const bool sent = mqttClient.publish(topic, value, true);
+  SensorDiscovery::topic(topic, sizeof(topic), id, "availability");
+  if (!mqttClient.publish(topic, sent ? "ONLINE" : "OFFLINE", true) || !sent)
+    sensorDiscoveryDirty = true;
+}
+
+void invalidateSensor(SensorDiscovery::Id id) {
+  sensorValid[id] = false;
+  char topic[100];
+  SensorDiscovery::topic(topic, sizeof(topic), id, "availability");
+  if (!mqttClient.publish(topic, "OFFLINE", true)) sensorDiscoveryDirty = true;
+}
+
+void publishSensorDiscovery() {
+  bool success = true;
+  for (unsigned i = 0; i < SensorDiscovery::Count; ++i) {
+    const auto id = static_cast<SensorDiscovery::Id>(i);
+    char topic[100];
+    // Never announce a temperature on a stove that has not returned this sensor.
+    if (sensorSeen[i]) {
+      JsonDocument config;
+      SensorDiscovery::build(config, id);
+      String payload;
+      serializeJson(config, payload);
+      SensorDiscovery::configTopic(topic, sizeof(topic), id);
+      success = mqttClient.publish(topic, payload.c_str(), true) && success;
+      SensorDiscovery::topic(topic, sizeof(topic), id, "state");
+      success = mqttClient.publish(topic, sensorValues[i], true) && success;
+    }
+    SensorDiscovery::topic(topic, sizeof(topic), id, "availability");
+    success = mqttClient.publish(topic, sensorValid[i] && success ? "ONLINE" : "OFFLINE", true) && success;
+  }
+  sensorDiscoveryDirty = !success;
+}
+
+void publishTemperature(const char *topic, const byte *data) {
+  char value[12];
+  StoveProtocol::temperature(StoveProtocol::word(data), value, sizeof(value));
+  mqttClient.publish(topic, value);
+}
 
 void hexDebug(byte *data, size_t length) {
   char output[(length * 2) + 1];
@@ -132,7 +259,7 @@ void hexDebug(byte *data, size_t length) {
   debug(output);
 }
 
-void queueBtCommand(Helper::btCmds name, byte *cmd) {
+bool queueBtCommand(Helper::btCmds name, const byte *cmd) {
   for (uint8_t i = 0; i < btWriteQueueLength; i++) {
     if (btWriteQueue[i].name == Helper::NO_CMD) {
       btWriteQueue[i].name = name;
@@ -140,12 +267,21 @@ void queueBtCommand(Helper::btCmds name, byte *cmd) {
       debug(F(", queued at index:"));
       debug(i);
       debugln();
-      break;
+      doBtConnect = true;
+      return true;
     }
   }
+  debugln(F("Command queue full: command rejected"));
+  return false;
 }
 
 void nextQuery() {
+  // Candidate channels follow the detected equipment; a valid sensor reply
+  // is additionally required before discovery/state publication.
+  while ((queryQueue[queryIndex].name == Helper::READ_FAN_23 && !fans.hasExtraFans()) ||
+         (queryQueue[queryIndex].name == Helper::READ_CANALIZED_2 && !fans.hasFan(2)) ||
+         (queryQueue[queryIndex].name == Helper::READ_CANALIZED_3 && !fans.hasFan(3)))
+    queryIndex = (queryIndex + 1) % queryQueueElements;
   byte btCmd[6];
   debugln();
   debug(F("Next Query Command:"));
@@ -162,6 +298,8 @@ void nextQuery() {
 }
 
 bool writeQueueHasElements() {
+  if (fanRefreshStep < fanRefreshComplete || fans.pending() || controlTransaction.pending())
+    return true;
   for (uint8_t i = 0; i < btWriteQueueLength; i++) {
     if (btWriteQueue[i].name != Helper::NO_CMD)
       return true;
@@ -170,30 +308,131 @@ bool writeQueueHasElements() {
 }
 
 static byte lastBtPacket[32];
+static byte lastBtCommand[6];
 
-void writeBtData() {
-  for (uint8_t i = 0; i < btWriteQueueLength; i++) {
-    if (btWriteQueue[i].name != Helper::NO_CMD) {
-      currentOp = btWriteQueue[i].name;
-      debug(F("-> Write, queue-index:"));
-      debug(i);
-      debug(F(", "));
-      debug(F("cmd:"));
-      debug(currentOp);
-      debug(", data:");
-      h.createBtPacket(btWriteQueue[i].cmd, 6, lastBtPacket);
-      hexDebug(btWriteQueue[i].cmd, 6);
-      debugln();
-      btWriteQueue[i].name = Helper::NO_CMD;
-      pRemoteCharacteristicWrite->writeValue(lastBtPacket, 32);
-      break;
-    }
+void handleBtFailure() {
+  controlTransaction.cancel();
+  if (currentOp == Helper::READ_ALARM) invalidateSensor(SensorDiscovery::Alarm);
+  if (currentOp == Helper::READ_WARNING_FLAGS) {
+    invalidateSensor(SensorDiscovery::Warnings);
+    invalidateSensor(SensorDiscovery::PelletReserve);
+  }
+  if (currentOp == Helper::READ_CANALIZED_2) invalidateSensor(SensorDiscovery::Channel2);
+  if (currentOp == Helper::READ_CANALIZED_3) invalidateSensor(SensorDiscovery::Channel3);
+  if (currentOp == Helper::READ_FIREPLACE_MAIN_STATUS) invalidateSensor(SensorDiscovery::StatusCode);
+  if (currentOp == Helper::READ_FAN || currentOp == Helper::READ_POWER ||
+      currentOp == Helper::SET_FAN_1 || currentOp == Helper::SET_WRITE_NEW_POWER)
+    fan1PowerFresh = false;
+  if (currentOp == Helper::SET_FAN_2 || currentOp == Helper::SET_FAN_3 ||
+      currentOp == Helper::READ_FAN_23) {
+    fans.failWrite();
+    publishExtraFanStates();
+  }
+  if (currentOp == Helper::READ_NUMBER_FAN) {
+    fans.setEquipment(FanControl::UnknownEquipment);
+    fanDiscoveryDirty = true;
+    publishFanAvailability();
+  }
+  if (currentOp == Helper::READ_RELAX || currentOp == Helper::SET_RELAX_STATUS) {
+    fans.cancelPending();
+    fans.requireRefresh();
   }
 }
-void processBtResponseData(byte *btData) {
+
+bool writeBtData() {
+  // Finish a confirmed prerequisite before any bootstrap or queued operation.
+  bool selected = controlTransaction.take(lastBtCommand);
+  if (selected) currentOp = transactionOp;
+  while (fanRefreshStep < fanRefreshComplete && !selected) {
+    const uint8_t step = fanRefreshStep++;
+    if (step == 0) {
+      currentOp = Helper::READ_NUMBER_FAN;
+      memcpy(lastBtCommand, h.readNumberFan, 6);
+    } else if (step == 1) {
+      currentOp = Helper::READ_RELAX;
+      memcpy(lastBtCommand, h.readRelax, 6);
+    } else if (step == 2) {
+      currentOp = Helper::READ_FAN;
+      memcpy(lastBtCommand, h.readFan, 6);
+    } else if (fans.hasExtraFans()) {
+      currentOp = Helper::READ_FAN_23;
+      memcpy(lastBtCommand, h.readFan23, 6);
+    } else {
+      continue;
+    }
+    selected = true;
+  }
+  for (int i = 0; i < btWriteQueueLength && !selected; ++i) {
+    if (btWriteQueue[i].name == Helper::NO_CMD)
+      continue;
+    currentOp = btWriteQueue[i].name;
+    memcpy(lastBtCommand, btWriteQueue[i].cmd, 6);
+    // Keep arrival order even when new MQTT commands arrive during a request.
+    for (uint8_t j = i; j + 1 < btWriteQueueLength; ++j)
+      btWriteQueue[j] = btWriteQueue[j + 1];
+    btWriteQueue[btWriteQueueLength - 1].name = Helper::NO_CMD;
+    --i; // The next candidate moved into this slot if validation rejects it.
+    if (currentOp == Helper::SET_FAN_1) {
+      if (!fan1PowerFresh || !fans.settingsFresh() || !fans.canAccept(1))
+        continue;
+      lastBtCommand[5] = currentPowerLevel;
+    } else if (currentOp == Helper::SET_WRITE_NEW_POWER) {
+      if (!fan1PowerFresh)
+        continue;
+      lastBtCommand[4] = currentFan1Level;
+    }
+    if (currentOp == Helper::SET_ON_OFF || currentOp == Helper::SET_ON_OFF_CHRONO ||
+        currentOp == Helper::SET_WRITE_NEW_POWER) {
+      transactionOp = currentOp;
+      controlTransaction.begin(lastBtCommand);
+      currentOp = transactionOp == Helper::SET_ON_OFF ? Helper::READ_FIREPLACE_COMMANDS :
+                  transactionOp == Helper::SET_ON_OFF_CHRONO ? Helper::READ_ON_OFF_CHRONO :
+                  Helper::SET_CHANGE_AUTO_SWITCH;
+    }
+    selected = true;
+  }
+  if (!selected && fans.pending()) {
+    selected = fans.beginWrite(lastBtCommand);
+    currentOp = Helper::SET_FAN_2; // Both values use the same register/echo.
+    if (!selected) {
+      fans.cancelPending();
+      debugln(F("Fan command cancelled: fresh settings unavailable or Relax active"));
+    }
+  }
+  if (!selected)
+    return false;
+  debug(F("-> Write cmd:"));
+  debug(currentOp);
+  debug(F(", data:"));
+  hexDebug(lastBtCommand, 6);
+  debugln();
+  h.createBtPacket(lastBtCommand, 6, lastBtPacket);
+  if (!pRemoteCharacteristicWrite->writeValue(lastBtPacket, 32)) {
+    handleBtFailure();
+    pClient->disconnect();
+    return false;
+  }
+  return true;
+}
+bool processBtResponseData(byte *btData) {
   debug(F("<- Read, data:"));
   Helper::structDatagram d;
-  h.getBtContent(btData, 32, &d);
+  byte decrypted[32];
+  h.aesDecrypt(btData, decrypted);
+  const Modbus::Response response =
+      Modbus::validate(decrypted + 20, 12, lastBtCommand);
+  if (response == Modbus::Response::Invalid) {
+    debugln(F("Ignoring invalid/mismatched Modbus response"));
+    return false;
+  }
+  if (response == Modbus::Response::Exception) {
+    debug(F("Modbus exception: "));
+    debugln(decrypted[22]);
+    handleBtFailure();
+    return true;
+  }
+  controlTransaction.acknowledge(decrypted + 20);
+  memcpy(&d, decrypted, sizeof(d));
   hexDebug(d.payload, 6);
   debugln();
   if (d.payload[1] == 6) { // Set Response
@@ -202,12 +441,15 @@ void processBtResponseData(byte *btData) {
     debug("; data:");
     hexDebug(d.payload, 6);
     debugln("");
-    if (currentOp == Helper::SET_ON_OFF) {
-      if (d.payload[5] == 1)
-        mqttClient.publish("edilkamin/322707E4/hvac_mode/state", "heat");
-      else if (d.payload[5] == 0)
-        mqttClient.publish("edilkamin/322707E4/hvac_mode/state", "off");
+    if (currentOp == Helper::SET_FAN_2 || currentOp == Helper::SET_FAN_3) {
+      fans.updatePair(d.payload[4], d.payload[5]);
+      publishExtraFanStates();
+    } else if (currentOp == Helper::SET_ON_OFF) {
+      mqttClient.publish("edilkamin/322707E4/hvac_mode/state",
+                         (d.payload[5] & 1) ? "heat" : "off");
     } else if (currentOp == Helper::SET_RELAX_STATUS) {
+      fans.setRelax(d.payload[4] != 0 || d.payload[5] != 0);
+      publishFanAvailability();
       if (d.payload[4] == 0 && d.payload[5] == 0)
         mqttClient.publish("edilkamin/322707E4/relax/state", "OFF");
       else if (d.payload[4] == 1 && d.payload[5] == 1)
@@ -263,7 +505,7 @@ void processBtResponseData(byte *btData) {
     } else if (currentOp == Helper::SET_STANDBY_STATUS) {
       if (d.payload[4] == 0 && d.payload[5] == 0)
         mqttClient.publish("edilkamin/322707E4/standby/state", "OFF");
-      else if (d.payload[4] == 1 && d.payload[5] == 1)
+      else if (d.payload[4] == 1 && d.payload[5] == 0)
         mqttClient.publish("edilkamin/322707E4/standby/state", "ON");
     } else if (currentOp == Helper::SET_CHANGE_AUTO_SWITCH) {
       if (d.payload[4] == 0) {
@@ -275,12 +517,7 @@ void processBtResponseData(byte *btData) {
         mqttClient.publish("edilkamin/322707E4/preset_mode/state", "Auto");
       }
     } else if (currentOp == Helper::SET_WRITE_NEW_TEMP) {
-      uint16_t r = (d.payload[4] << 8) + d.payload[5];
-      float x = r * 0.1;
-      char msg_out[10];
-      dtostrf(x, 2, 1, msg_out);
-      mqttClient.publish("edilkamin/322707E4/target_temperature/state",
-                         msg_out);
+      publishTemperature("edilkamin/322707E4/target_temperature/state", d.payload + 4);
     }
   } else if (d.payload[1] == 3) { // Query Response
     debug(F("Response for query-cmd:"));
@@ -289,7 +526,33 @@ void processBtResponseData(byte *btData) {
     hexDebug(d.payload, 6);
 
     debugln();
-    if (currentOp == Helper::READ_AUTOMATIC) {
+    if (currentOp == Helper::READ_FIREPLACE_COMMANDS) {
+      mqttClient.publish("edilkamin/322707E4/hvac_mode/state",
+                         (d.payload[4] & 1) ? "heat" : "off");
+    } else if (currentOp == Helper::READ_ALARM) {
+      char value[8];
+      snprintf(value, sizeof(value), "%u", d.payload[3]);
+      publishSensor(SensorDiscovery::Alarm, value);
+    } else if (currentOp == Helper::READ_CANALIZED_2 || currentOp == Helper::READ_CANALIZED_3) {
+      char value[12];
+      StoveProtocol::temperature(StoveProtocol::word(d.payload + 3), value, sizeof(value));
+      publishSensor(currentOp == Helper::READ_CANALIZED_2 ? SensorDiscovery::Channel2 :
+                    SensorDiscovery::Channel3, value);
+    } else if (currentOp == Helper::READ_NUMBER_FAN) {
+      const byte previous = fans.equipment();
+      fans.setEquipment(d.payload[4]);
+      char code[4];
+      snprintf(code, sizeof(code), "%u", d.payload[4]);
+      mqttClient.publish("edilkamin/322707E4/fan_configuration/state", code, true);
+      if (previous != fans.equipment())
+        fanDiscoveryDirty = true;
+      if (!fans.hasFan(2)) invalidateSensor(SensorDiscovery::Channel2);
+      if (!fans.hasFan(3)) invalidateSensor(SensorDiscovery::Channel3);
+      publishFanAvailability();
+    } else if (currentOp == Helper::READ_FAN_23) {
+      fans.updatePair(d.payload[3], d.payload[4]);
+      publishExtraFanStates();
+    } else if (currentOp == Helper::READ_AUTOMATIC) {
       if (d.payload[3] == 1) {
         automatic = true;
         mqttClient.publish("edilkamin/322707E4/automatic_mode/state", "ON");
@@ -318,29 +581,16 @@ void processBtResponseData(byte *btData) {
         break;
       }
     } else if (currentOp == Helper::READ_MAIN_ENV_TEMP) {
-      int r = (int16_t)(0 << 8) + d.payload[4];
-      if (r > 0) {
-        float x = r * 0.1;
-        char msg_out[10];
-        dtostrf(x, 2, 1, msg_out);
-        mqttClient.publish("edilkamin/322707E4/temperature/state", msg_out);
-      }
+      publishTemperature("edilkamin/322707E4/temperature/state", d.payload + 3);
     } else if (currentOp == Helper::READ_THERMOCOUPLE_TEMP) {
-      uint16_t r = (d.payload[3] << 8) + d.payload[4];
-      r = (r * 0.1) + 0.5;
-      char msg_out[10];
-      itoa(r, msg_out, 10);
-      mqttClient.publish("edilkamin/322707E4/thermocouple_temperature/state",
-                         msg_out);
+      publishTemperature("edilkamin/322707E4/thermocouple_temperature/state", d.payload + 3);
     } else if (currentOp == Helper::READ_TEMPERATURE) {
-      uint16_t r = (d.payload[3] << 8) + d.payload[4];
-      float x = r * 0.1;
-      char msg_out[10];
-      dtostrf(x, 2, 1, msg_out);
-      mqttClient.publish("edilkamin/322707E4/target_temperature/state",
-                         msg_out);
+      publishTemperature("edilkamin/322707E4/target_temperature/state", d.payload + 3);
     } else if (currentOp == Helper::READ_FAN) {
       currentFan1Level = d.payload[3];
+      currentPowerLevel = d.payload[4];
+      fan1PowerValid = fan1PowerFresh =
+          currentFan1Level <= 6 && currentPowerLevel <= 5;
       switch (d.payload[3]) {
       case 1:
         mqttClient.publish("edilkamin/322707E4/fan_mode/state", "20%");
@@ -362,6 +612,12 @@ void processBtResponseData(byte *btData) {
         break;
       }
     } else if (currentOp == Helper::READ_RELAX) {
+      if (d.payload[4] <= 1) {
+        fans.setRelax(d.payload[4] == 1);
+        publishFanAvailability();
+      } else {
+        handleBtFailure();
+      }
       if (d.payload[4] == 0)
         mqttClient.publish("edilkamin/322707E4/relax/state", "OFF");
       else if (d.payload[4] == 1)
@@ -377,44 +633,24 @@ void processBtResponseData(byte *btData) {
       else if (d.payload[4] == 1)
         mqttClient.publish("edilkamin/322707E4/chrono_mode/state", "ON");
     } else if (currentOp == Helper::READ_FIREPLACE_MAIN_STATUS) {
-      if (d.payload[3] == 1 && d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/status/state", "Cleaning");
-      else if (d.payload[3] == 3 && d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/status/state",
-                           "Loading Pellets");
-      else if (d.payload[3] == 4 && d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/status/state",
-                           "Ignition - charge suspend");
-      else if (d.payload[3] == 5 && d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/status/state",
-                           "Check exhaust gas temperature");
-      else if (d.payload[3] == 6 && d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/status/state",
-                           "Threshold temperature check");
-      else if (d.payload[3] == 7 && d.payload[4] == 1)
-        mqttClient.publish("edilkamin/322707E4/status/state", "Warmup");
-      else if (d.payload[3] == 2 && d.payload[4] == 2)
-        mqttClient.publish("edilkamin/322707E4/status/state", "Ok");
-      else if (d.payload[3] == 0 && d.payload[4] == 3)
-        mqttClient.publish("edilkamin/322707E4/status/state", "Shutdown");
-      else if (d.payload[3] == 0 && d.payload[4] == 4)
-        mqttClient.publish("edilkamin/322707E4/status/state", "Extinction");
-      else if (d.payload[3] == 0 && d.payload[4] == 0) {
-        mqttClient.publish("edilkamin/322707E4/status/state", "Off");
-        mqttClient.publish("edilkamin/322707E4/hvac_mode/state", "off");
-      } else {
-        debug(F("Unknown status combination: "));
-        debug(d.payload[3]);
-        debug(F("/"));
-        debugln(d.payload[4]);
-      }
+      char value[64];
+      StoveProtocol::statusText(d.payload[3], d.payload[4], value, sizeof(value));
+      mqttClient.publish("edilkamin/322707E4/status/state", value);
+      snprintf(value, sizeof(value), "%u/%u", d.payload[4], d.payload[3]);
+      publishSensor(SensorDiscovery::StatusCode, value);
     } else if (currentOp == Helper::READ_WARNING_FLAGS) {
-      if (d.payload[4] == 0) // Pellet ok
-        mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Ok");
-      else if (d.payload[4] == 4) // Pellet low
-        mqttClient.publish("edilkamin/322707E4/pellet_level/state", "Empty");
+      // Two registers = four data bytes. d.payload has only six bytes total;
+      // use the validated decrypted frame for the fourth data byte.
+      const byte *data = decrypted + 23;
+      const bool reserve = StoveProtocol::pelletReserve(data);
+      mqttClient.publish("edilkamin/322707E4/pellet_level/state", reserve ? "Reserve" : "Ok");
+      publishSensor(SensorDiscovery::PelletReserve, reserve ? "ON" : "OFF");
+      char value[12];
+      snprintf(value, sizeof(value), "%02X%02X%02X%02X", data[0], data[1], data[2], data[3]);
+      publishSensor(SensorDiscovery::Warnings, value);
     }
   }
+  return true;
 }
 
 // MQTT-Callback
@@ -429,56 +665,59 @@ void mqttCallback(String topic, byte *message, unsigned int length) {
     // debug((char)message[i]);
     msg += (char)message[i];
   }
+  if (msg.length() != strlen(msg.c_str())) return; // Reject embedded NUL payloads.
   debug(msg);
+  const bool switchTopic = topic == "edilkamin/322707E4/automatic_mode/set" ||
+      topic == "edilkamin/322707E4/relax/set" || topic == "edilkamin/322707E4/chrono_mode/set" ||
+      topic == "edilkamin/322707E4/standby/set" || topic == "edilkamin/322707E4/bluetooth/set";
+  if (switchTopic && msg != "ON" && msg != "OFF") return;
   // debugln("");
   byte btCmd[6];
-  if (topic == "edilkamin/322707E4/bluetooth/set") {
+  if (topic == "homeassistant/status") {
+    if (msg == "online")
+      fanDiscoveryDirty = sensorDiscoveryDirty = true;
+  } else if (topic == "edilkamin/322707E4/fan2_mode/set" ||
+             topic == "edilkamin/322707E4/fan3_mode/set") {
+    const byte fan = topic == "edilkamin/322707E4/fan2_mode/set" ? 2 : 3;
+    if (!fans.request(fan, FanControl::parseMode(msg.c_str()))) {
+      debugln(F("Rejected fan command: invalid mode, absent fan, or Relax active/unknown"));
+      return;
+    }
+    // Also cancel a scheduled disconnect decided in the previous loop iteration.
+    doBtConnect = true;
+    if (fanRefreshStep == fanRefreshComplete && !fans.ready() && bleConnected)
+      fanRefreshStep = 0;
+  } else if (topic == "edilkamin/322707E4/bluetooth/set") {
     if (msg == "ON")
       doBtConnect = true;
     if (msg == "OFF")
       doBtConnect = false;
   } else if (topic == "edilkamin/322707E4/hvac_mode/set") {
+    if (msg != "heat" && msg != "off") return;
     memcpy(btCmd, h.setOnOff, 6);
     if (msg == "heat")
       btCmd[5] = 1;
     else if (msg == "off")
       btCmd[5] = 0;
     queueBtCommand(Helper::SET_ON_OFF, btCmd);
-  } else if (topic == "edilkamin/322707E4/fan_mode/set" &&
-             currentFan1Level != 0 &&
-             currentPowerLevel !=
-                 0) // ignore set command if fan & power-level is 0 (=boot)
-  {
-    byte btPacket[32];
+  } else if (topic == "edilkamin/322707E4/fan_mode/set") {
+    const byte level = FanControl::parseMode(msg.c_str());
+    if (!level || !fan1PowerValid || !fans.canAccept(1))
+      return;
     memcpy(btCmd, h.setFan1, 6);
+    btCmd[4] = level;
     btCmd[5] = currentPowerLevel;
-    if (msg == "20%")
-      btCmd[4] = 1;
-    else if (msg == "40%")
-      btCmd[4] = 2;
-    else if (msg == "60%")
-      btCmd[4] = 3;
-    else if (msg == "80%")
-      btCmd[4] = 4;
-    else if (msg == "100%")
-      btCmd[4] = 5;
-    else if (msg == "Auto")
-      btCmd[4] = 6;
     queueBtCommand(Helper::SET_FAN_1, btCmd);
+    if (bleConnected && !fan1PowerFresh && fanRefreshStep == fanRefreshComplete)
+      fanRefreshStep = 0;
   } else if (topic == "edilkamin/322707E4/automatic_mode/set") {
-    byte btPacket[32];
     memcpy(btCmd, h.setChangeAutoSwitch, 6);
     if (msg == "ON")
       btCmd[4] = 1;
     else if (msg == "OFF")
       btCmd[4] = 0;
     queueBtCommand(Helper::SET_CHANGE_AUTO_SWITCH, btCmd);
-  } else if (topic == "edilkamin/322707E4/preset_mode/set" &&
-             currentFan1Level != 0 &&
-             currentPowerLevel !=
-                 0) // ignore set command if fan & power-level is 0 (=boot)
-  {
-    byte btPacket[32];
+  } else if (topic == "edilkamin/322707E4/preset_mode/set" && fan1PowerValid) {
     if (msg == "Auto") {
       memcpy(btCmd, h.setChangeAutoSwitch, 6);
       btCmd[4] = 1;
@@ -496,11 +735,16 @@ void mqttCallback(String topic, byte *message, unsigned int length) {
         btCmd[5] = 4;
       else if (msg == "Man. P5")
         btCmd[5] = 5;
+      else
+        return;
       queueBtCommand(Helper::SET_WRITE_NEW_POWER, btCmd);
     }
   } else if (topic == "edilkamin/322707E4/target_temperature/set") {
-    msg.replace(".", ""); // 24.5 to 245
-    uint16_t t = msg.toInt();
+    uint16_t t;
+    if (!StoveProtocol::parseTemperature(msg.c_str(), t)) {
+      debugln(F("Rejected temperature: expected decimal Celsius in range 5..35"));
+      return;
+    }
     memcpy(btCmd, h.setWriteNewTemperature, 6);
     btCmd[4] = (uint8_t)(t >> 8);
     btCmd[5] = (uint8_t)t;
@@ -527,7 +771,7 @@ void mqttCallback(String topic, byte *message, unsigned int length) {
     memcpy(btCmd, h.setStandbyStatus, 6);
     if (msg == "ON") {
       btCmd[4] = 1;
-      btCmd[5] = 1;
+      btCmd[5] = 0;
     } else if (msg == "OFF") {
       btCmd[4] = 0;
       btCmd[5] = 0;
@@ -543,10 +787,19 @@ void mqttReconnect() {
   debug(mqtt_server);
   debug(F(" User: "));
   debugln(mqtt_user);
-  if (mqttClient.connect(hostname, mqtt_user, mqtt_pass)) {
+  if (mqttClient.connect(hostname, mqtt_user, mqtt_pass,
+                         "edilkamin/322707E4/bridge/availability", 1, true,
+                         "OFFLINE")) {
+    mqttClient.publish("edilkamin/322707E4/bridge/availability", "ONLINE", true);
+    mqttClient.publish("edilkamin/322707E4/firmware_version/state", EDILKAMIN_VERSION, true);
+    publishFanAvailability();
+    fanDiscoveryDirty = sensorDiscoveryDirty = true;
     msLastMqttConnect = millis(); // Reset watchdog on successful connect
     debugln(F("Connected. Subscripting to topics..."));
     mqttClient.subscribe("edilkamin/322707E4/fan_mode/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/fan2_mode/set", 1);
+    mqttClient.subscribe("edilkamin/322707E4/fan3_mode/set", 1);
+    mqttClient.subscribe("homeassistant/status", 1);
     mqttClient.subscribe("edilkamin/322707E4/hvac_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/preset_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/target_temperature/set", true);
@@ -558,8 +811,7 @@ void mqttReconnect() {
     mqttClient.subscribe("edilkamin/322707E4/bluetooth/set", true);
 
     debugln("Publishing Autodiscover Config to HA...");
-    mqttClient.publish("homeassistant/climate/edilkamin_322707E4/config",
-                       h.jsonAutodiscover, true);
+    publishFanDiscovery();
     mqttClient.publish(
         "homeassistant/switch/edilkamin_322707E4_automatic_mode/config",
         h.jsonAutodiscoverAutomaticMode, true);
@@ -594,7 +846,9 @@ static uint8_t btDataBuffer[32];
 
 static void bleNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic,
                               uint8_t *pData, size_t length, bool isNotify) {
-  memcpy(btDataBuffer, pData, min(length, (size_t)32));
+  if (length != sizeof(btDataBuffer))
+    return;
+  memcpy(btDataBuffer, pData, sizeof(btDataBuffer));
   btResponse = true;
   btData = btDataBuffer;
 }
@@ -604,6 +858,7 @@ class MyClientCallback : public BLEClientCallbacks {
 
   void onDisconnect(BLEClient *pclient) {
     bleConnected = false;
+    bleDisconnected = true;
     debugln();
     debugln(F("BLE disconnected..."));
   }
@@ -656,6 +911,13 @@ bool connectToServer() {
   }
 
   bleConnected = true;
+  bleDisconnected = false;
+  bleLastConnect = millis();
+  fans.requireRefresh();
+  fan1PowerFresh = false;
+  fanRefreshStep = 0;
+  btResponse = false;
+  status = CHECK_BT_WRITE_QUEUE;
   debugln(F("Publishing Online-state to HA..."));
   mqttClient.publish("edilkamin/322707E4/availability/state", "ONLINE", true);
   return true;
@@ -683,6 +945,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("Edilkamin_BT " EDILKAMIN_VERSION);
 
   // Check if Boot Button (GPIO 0) is pressed for factory reset
   pinMode(0, INPUT_PULLUP);
@@ -816,6 +1079,16 @@ void setup() {
 
 void loop() {
   currentMillis = millis();
+  if (bleDisconnected) {
+    bleDisconnected = false;
+    controlTransaction.cancel();
+    fans.failWrite();
+    fans.requireRefresh();
+    fan1PowerFresh = false;
+    fanRefreshStep = fanRefreshComplete;
+    btResponse = false;
+    status = START;
+  }
 
   // Telnet-Terminal
   switch (TelnetStream.read()) {
@@ -849,6 +1122,15 @@ void loop() {
     msLastMqttConnect = currentMillis;
   }
 
+  for (unsigned i = 0; i < SensorDiscovery::Count; ++i)
+    if (sensorValid[i] && currentMillis - sensorUpdated[i] >= sensorMaxAge)
+      invalidateSensor(static_cast<SensorDiscovery::Id>(i));
+  if (sensorDiscoveryDirty && mqttClient.connected())
+    publishSensorDiscovery();
+
+  if (fanDiscoveryDirty && mqttClient.connected())
+    publishFanDiscovery();
+
   if (bleDoConnect == true) {
     if (connectToServer()) {
       debugln(F("We are now connected to the BLE Server."));
@@ -877,7 +1159,9 @@ void loop() {
     status = CHECK_BT_WRITE_QUEUE;
     break;
   case DO_NEXT_QUERY:
-    if (currentMillis - msLastQuery >= queryInterval) {
+    if (writeQueueHasElements()) {
+      status = CHECK_BT_WRITE_QUEUE;
+    } else if (currentMillis - msLastQuery >= queryInterval) {
       msLastQuery = currentMillis;
       nextQuery();
       status = CHECK_BT_WRITE_QUEUE;
@@ -890,7 +1174,9 @@ void loop() {
       status = BT_CHECK_ON_OFF_TIMES;
     break;
   case BT_CHECK_ON_OFF_TIMES:
-    if (bleConnected && currentMillis - bleLastConnect >= bleOnTime) {
+    if (writeQueueHasElements()) {
+      status = BT_CONNECT_CHECK;
+    } else if (bleConnected && currentMillis - bleLastConnect >= bleOnTime) {
       doBtConnect = false;
       bleLastSwitchOff = currentMillis;
       status = START;
@@ -914,8 +1200,10 @@ void loop() {
     break;
   case BT_WRITE_REQUEST:
     btResponse = false;
-    btRetryCount = 0;
-    writeBtData();
+    if (!writeBtData()) {
+      status = START;
+      break;
+    }
     writeTimestamp = currentMillis;
     status = AWAIT_BT_RESPONSE;
     break;
@@ -923,25 +1211,20 @@ void loop() {
     if (btResponse) {
       status = PROCESSING_BT_RESPONSE;
     } else if (currentMillis - writeTimestamp >= responseTimeout) {
-      if (btRetryCount < btMaxRetries) {
-        btRetryCount++;
-        debug(F("Bluetooth Response Timeout, retry "));
-        debug(btRetryCount);
-        debug(F("/"));
-        debugln(btMaxRetries);
-        btResponse = false;
-        pRemoteCharacteristicWrite->writeValue(lastBtPacket, 32);
-        writeTimestamp = currentMillis;
-      } else {
-        debug(F("Bluetooth Response Timeout for cmd "));
-        debugln(currentOp);
-        status = START;
-      }
+      debug(F("Bluetooth Response Timeout for cmd "));
+      debugln(currentOp);
+      handleBtFailure();
+      // Read replies contain no register address. Reset the link before the
+      // next request so a delayed reply cannot confirm a different shared read.
+      // Writes are not blindly repeated after an uncertain acknowledgement.
+      pClient->disconnect();
+      status = START;
     }
     break;
   case PROCESSING_BT_RESPONSE:
-    processBtResponseData(btData);
-    status = DONE_PROCESSING_BT_RESPONSE;
+    btResponse = false;
+    status = processBtResponseData(btData) ? DONE_PROCESSING_BT_RESPONSE
+                                          : AWAIT_BT_RESPONSE;
     break;
   case DONE_PROCESSING_BT_RESPONSE:
     status = START;

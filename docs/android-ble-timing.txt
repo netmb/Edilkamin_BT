@@ -1,0 +1,118 @@
+The Mind 1.3.6: Bluetooth-Taktung, Timeout und Verbindungspausen
+29.10.2026
+
+Ergebnis
+In den untersuchten Android-App-Pfaden wurde kein periodischer Zyklus wie
+"30 Sekunden verbunden, danach 120 Sekunden getrennt" gefunden. Die App
+verwendet Antwort-Timeouts, abfrageweise Serialisierung und an sichtbare
+Bildschirme/Lifecycle gebundenes Polling. Es gibt tatsächlich einen 2-Minuten-
+Timer; dieser ist jedoch eine Cloud-Verbindungsprüfung und keine BLE-Ruhepause.
+Dies ist ein statischer Befund, kein gemessener Langzeittest am Ofen.
+
+Belegte Abläufe (Pfade relativ zu com/edilkamin/stufe; Zeilen = Original-Smali)
+
+1. Antwortgetriebene Einzelaufträge statt paralleler BLE-Requests
+   services/bluetooth/BluetoothService.smali:
+   - enqueueOperation(), L4600..4748, Kotlin L484..493: ConcurrentLinkedDeque;
+     executeOperation wird nur gestartet, wenn pendingOperation null ist.
+   - executeOperation(), L1129..1213, Kotlin L505..510: wartet bei bestehendem
+     pendingOperation, nimmt sonst den nächsten Auftrag aus der Queue.
+   - signalEndOfOperation(), L5210..5266, Kotlin L497..501: pendingOperation=null;
+     bei nichtleerer Queue unmittelbar executeOperation(). Kein fester Abstand
+     zwischen zwei erfolgreich abgeschlossenen Aufträgen in diesem Pfad.
+   - BluetoothService$gattCallback$1.onCharacteristicChanged(), z.B. L408..468
+     und L636..707: Antwort markiert isExecuted=true, entfernt Timeout-Callback,
+     veröffentlicht Antwort und ruft signalEndOfOperation().
+
+2. 15 Sekunden Antwort-Timeout, keine 15-Sekunden-Pause nach jeder Antwort
+   BluetoothService.writeFromCharacteristic(), L5332..5513, Kotlin L343..359:
+   - Normale Modbus-Anfrage setzt isExecuted=false und schreibt den verschlüsselten
+     Request mit WRITE_TYPE_NO_RESPONSE (Android-Konstantenwert 1).
+   - postDelayed(handlerTimeoutRunnable, 0x3a98) = 15000 ms.
+   - handlerTimeoutRunnable$lambda$0, L3958..3967, ruft checkIfUpdated().
+   - checkIfUpdated(), L748..829, Kotlin L453..456: falls weiterhin !isExecuted,
+     DISCONNECTED-Broadcast und close(). Kein Wiedersenden desselben Requests
+     in dieser Methode. onCharacteristicWrite(), Callback L711..811, loggt
+     Schreibfehler, enthält ebenfalls keinen expliziten Request-Retry.
+   - close(), L4184..4233, Kotlin L413..418: leert Queue/pendingOperation,
+     ruft BluetoothGatt.disconnect(), verwirft GATT-Referenz.
+   Im Vergleich: unsere Bridge verwendete zuletzt 2 Sekunden Antwort-Timeout.
+   Die 15 Sekunden der App sind ein prüfbarer Unterschied, keine belegte Ursache
+   für die vom Nutzer beobachteten Ofen-Hänger.
+
+3. Separates Verbindungs-/MTU-Setup
+   - BluetoothService.connect(), L4235..4404, Kotlin L378..406: dropConnection=true;
+     verbindet mit connectGatt(..., autoConnect=true, ...); nach 15000 ms wird
+     connect$lambda$10 ausgeführt.
+   - connect$lambda$10, L1047..1074: schließt nur falls dropConnection noch true.
+   - GATT Callback onConnectionStateChange(), L813..1181, Kotlin L101..138:
+     bei CONNECTED wird dropConnection=false (L872). Damit ist der oben genannte
+     Timer eine Aufbauüberwachung, keine regelmäßige Trennung aktiver Verbindung.
+   - Nach CONNECTED werden Services entdeckt und nach 2500 ms (0x9c4, L1019)
+     MTU 300 (0x12c) angefordert: Callback lambda$1, L197..244.
+   - Disconnect schließt GATT und setzt Bluetooth-/MTU-Flags zurück. Ein
+     bedingter 1000-ms-Wait bei isChanging betrifft den Kommunikationswechsel;
+     kein 120-Sekunden-Cooldown.
+   - Scandauer SCAN_TIME=5000 ms: BluetoothService constructor L332..338;
+     startLeScan L5268..5330 plant damit das Scanende.
+
+4. Bildschirm-Polling alle 5 Sekunden während BLE-Verbindung
+   - feature/homepage/HomepageFragment$pollingData$1.run(), L60..168,
+     Kotlin L89..91: bei isBluetoothConnection() pollingRequests(), erneut nach
+     5000 ms (0x1388). Der Netzwerkzweig verwendet 10000 ms, L285..338.
+   - feature/fan/FanFragment$pollingData$1.run(), L60..110, Kotlin L58..60:
+     ebenfalls BLE-pollingRequests() und 5000 ms; Netzwerkzweig 15000 ms,
+     L228..274.
+   Das sind Abfragezyklen mit mehreren queued Requests, keine garantierten
+   5 Sekunden zwischen einzelnen BLE-Paketen und keine getrennte Verbindung.
+   - HomepageFragment.onPause L10508..10640 und FanFragment.onPause L6644..6803
+     entfernen die jeweiligen Polling-Runnables.
+
+5. Tatsächliche BLE-Trennung beim Verlassen der App
+   - MainActivity.onStop(), L2738..2778, Kotlin L253..257, ruft
+     mBluetoothLEService.close().
+   - MainActivity.disconnectBluetooth(), L1693..1713, delegiert ebenfalls close().
+   - Weitere direkte Aufrufer dieser Schnittstelle finden sich bei Wechsel der
+     bevorzugten Kommunikation, Abmelden/Entfernen eines Ofens bzw. Kontos.
+   Normale Handybenutzung erzeugt somit natürliche Verbindungsunterbrechungen,
+   während ein dauerhaft laufender ESP32 ohne eigene Pausen anders genutzt wird.
+   Das ist eine plausible Last-/Nutzungsdifferenz, kein Nachweis der Hängerursache.
+
+6. Der vorhandene 2-Minuten-Timer ist kein BLE-Cooldown
+   utils/viewmodel/TimerViewModel$startTimer$1.invokeSuspend(), L277..415,
+   Kotlin L39..53:
+   - zählt in 250-ms-Schritten;
+   - nach mehr als 2 MINUTES wird der Zähler zurückgesetzt;
+   - nur wenn !BluetoothState.isMtuSetted(): RetrofitRepository.checkConnection
+     mit AliveBody("check", mqttWifi).
+   - kein close(), disconnect(), BLE-Aus-/Wiedereinschalten in diesem Timer.
+
+Weitere ausgeschlossene Verwechslung
+BleOperation Screen_Fan_End / Screen_Temperature_End / Screen_Chrono_End sind
+in BluetoothService.executeOperation L2922..2960 lokale Queue-Endmarker:
+Broadcast einer leeren Antwort, danach signalEndOfOperation(); keine Trennung.
+Der Custom-Befehl UNCONNECT ist ein separater WiFi-Einrichtungspfad; daraus
+wurde kein periodischer BLE-Cooldown abgeleitet.
+
+Folgerung für die Bridge
+Die bestehende 30s/120s-Pause vorerst beibehalten, weil der Nutzer sie als
+praktisch notwendigen Workaround gegen Hänger beobachtet hat. Aus der APK lässt
+sich ihre Entfernung nicht rechtfertigen. Vor Änderungen den jetzigen Zyklus
+mit Zeitstempeln, Zahl der Anfragen, Antwortlatenzen und Abbruchursachen messen.
+Den 2s-gegen-15s-Timeout-Unterschied getrennt von den langen Pausen behandeln.
+Ein längerer Timeout kann langsame Antworten berücksichtigen; dass er die
+Ofen-Hänger verhindert, ist nicht belegt.
+
+Abdeckung / Grenzen
+Untersucht wurden der vollständige BluetoothService und sein GATT Callback,
+MainActivity-Verbindung/Lifecycle, Homepage-/Fan-Polling, TimerViewModel und
+appweite direkte close/disconnect-Aufrufer sowie Suchen nach 30s/120s-Konstanten.
+Kein Android-Livebetrieb, kein BLE-Mitschnitt, keine Messung am Ofen und keine
+vollständige Analyse des Android-Bluetooth-Stacks oder der Ofen-Firmware.
+Eine andere App-/Ofenversion kann abweichen.
+REA-Android war bereits wegen fehlendem REA_JADX_MCP_JAR nicht verfügbar.
+Verwendet wurden vorhandene statische Baksmali-3.0.9-Ausgaben. Diese Belege
+haben keine REA-Evidence-IDs. Belegauszüge und Hashes liegen lokal unter android_apk/analysis/ble-timing/
+evidence-index.json; die fremde APK und dekompilierte Dateien werden nicht
+im öffentlichen Repository veröffentlicht.
+Keine Firmwaredateien wurden für diese Analyse verändert.

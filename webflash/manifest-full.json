@@ -1,0 +1,17 @@
+{
+  "name": "Edilkamin_BT Firmware",
+  "version": "2026.10.29-test1",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "merged-firmware.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

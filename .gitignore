@@ -1,0 +1,8 @@
+.DS_Store
+.pio/
+.local/
+__pycache__/
+*.pyc
+settings.ini
+# Supplied third-party packages and full decompilation stay local.
+android_apk/

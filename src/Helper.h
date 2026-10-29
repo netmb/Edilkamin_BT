@@ -156,7 +156,7 @@ public:
   const byte readMotherboardAppVersion[6] PROGMEM = {1, 3, 0, 50, 0, 8};
   const byte readRemoteControlSerial[6] PROGMEM = {1, 3, 0, 60, 0, 8};
   const byte readRemoteControlName[6] PROGMEM = {1, 3, 0, 118, 0, 8};
-  const byte readDisplayIdro[6] PROGMEM = {1, 3, 0, 150, 0, 8};
+  const byte readDisplayIdro[6] PROGMEM = {1, 3, 2, 88, 0, 8};
   const byte readEmergencyPannelVersion[6] PROGMEM = {1, 3, 0, 100, 0, 8};
   const byte readComandVersion[6] PROGMEM = {1, 3, 0, 150, 0, 8};
   const byte readComandEmergencyVersion[6] PROGMEM = {1, 3, 2, 38, 0, 8};
@@ -174,15 +174,14 @@ public:
                                                  205, 0, 2}; // B5: 0,1; B6:2,3
   const byte setEasyTime[6] PROGMEM = {1, 6, 3, 27, 0, 2};   // B5: 0,1; B6:2,3
   const byte setOnOffChrono[6] PROGMEM = {
-      1, 6, 5, 34, 0, 0}; // B5 = ChronoProgram; B6: 0,1 = on,off
+      1, 6, 5, 34, 0, 0}; // B5 = preserved ChronoProgram; B6: 0=off, 1=on
   const byte setRelaxStatus[6] PROGMEM = {
       1, 6, 5, 43, 0, 0}; // B5 = 0,1 =off,on; B6 = 0,1 =off, on; off=00 on=11
   const byte setFan1[6] PROGMEM = {
       1, 6, 5, 41, 0, 0}; // B5: Power 0-6; B6:PowerLevel (notFan)
-  const byte setFan2[6] PROGMEM = {1,  6, 5,
-                                   42, 0, 0}; // B5: ?; B6:0,1 = Powerstate?
-  const byte setFan3[6] PROGMEM = {1,  6, 5,
-                                   43, 0, 0}; // B5: ?; B6:0,1 = Powerstate?
+  // Both fans share 0x052A: high byte = Fan3, low byte = Fan2.
+  const byte setFan2[6] PROGMEM = {1, 6, 5, 42, 0, 0};
+  const byte setFan3[6] PROGMEM = {1, 6, 5, 42, 0, 0};
   const byte setCanalizedTemperature[6] PROGMEM = {
       1, 6, 5, 38, 0, 2}; // B4: 38,39; B5: 0,1; B6:2,3
   const byte setAirKare[6] PROGMEM = {
@@ -197,7 +196,7 @@ public:
   const byte setSweep[6] PROGMEM = {1, 6, 3, 28, 0, 0};
   const byte setTemperatureFormat[6] PROGMEM = {1,  6, 5,
                                                 36, 0, 0}; // B5: ?; B6: 0,1
-  const byte setStandbyStatus[6] PROGMEM = {1, 6, 5, 44, 0, 0}; // B5: 0,1
+  const byte setStandbyStatus[6] PROGMEM = {1, 6, 5, 44, 0, 0}; // B5: 0/1; B6: always 0
   const byte setWriteNewTemperature[6] PROGMEM = {
       1, 6, 5, 37, 0, 0}; // B4: 37,38,39; B5: ?; B6: ?
   const byte setWriteNewPower[6] PROGMEM = {
@@ -205,7 +204,7 @@ public:
   const byte setChangeAutoSwitch[6] PROGMEM = {1,  6, 5,
                                                35, 1, 1}; // B5= 0,1 off,on
   const byte setOnOff[6] PROGMEM = {1,  6, 3,
-                                    28, 0, 0}; // B5 = 0, B6 = 1 = on, 0= 0ff
+                                    28, 0, 0}; // Shared 0x031C: preserve every bit except ON_OFF bit 0
 
   const char *jsonAutodiscover PROGMEM =
       "{\"name\": \"Edilkamin\",\"unique_id\": "
