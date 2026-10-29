@@ -1,9 +1,11 @@
 {
-  "version": "2026.10.29-test1",
+  "version": "2026.10.29",
   "hardware_validation": {
-    "status": "single_fan_cold_test_passed",
+    "status": "version_only_rebuild_of_validated_source",
     "date": "2026-10-29",
     "report": "../docs/hardware-validation.json",
+    "tested_version": "2026.10.29-test1",
+    "tested_firmware_sha256": "9ab17777b9bcd991e700f93ac48cd6b0c11c466b5cc6f43a25457c670d24473b",
     "not_tested": [
       "combustion or physical fan airflow",
       "Fan 2/3 on a multi-fan stove",
@@ -12,11 +14,11 @@
       "nonzero alarm and pellet reserve conditions"
     ]
   },
-  "packaged_from_commit": "4615ca32b8fe5a4892b1afb3793714bd580cd1e8",
+  "packaged_from_commit": "10b93f0a43d4f7514d308a8f6b6b594ab2ca2761",
   "source_sha256": {
     "src/FanControl.h": "61bbeca5492fe9a831e7f4f7d8b4ec5445322dcf7dffc9c9993f5d7b7eec1854",
     "src/FanDiscovery.h": "ea886ce2f4e0a8d45153f8d685e4b21171886766bd16352a63c216c79938c748",
-    "src/FirmwareVersion.h": "072407d3960ef000a57f127fac4eb59c7f7f583c734baa51647a3312afa3c7b0",
+    "src/FirmwareVersion.h": "ff67d7891c271b0df987cf287f7c0e71a899f573c8c4b8d1a6eaa46541fae2d3",
     "src/Helper.cpp": "78693ec7973db663db412f0856a17cc6294d8ccea4748ccc76533bb458908d26",
     "src/Helper.h": "e1b9055d83e79a54867bc8e189a4c2f8bdf7aa0f51ab0cd2c3be41b872e38d73",
     "src/ModbusResponse.h": "75ec027b1123b378d9d66d53e56454ab2c13b311c6aba7f6df5e96a89ed0fe6e",
@@ -36,12 +38,12 @@
       "sha256": "5b6d926fbb231dccde783a68bbaa435317d1cfde2b61118a00c8147b581ee289"
     },
     "firmware.bin": {
-      "bytes": 1241408,
-      "sha256": "9ab17777b9bcd991e700f93ac48cd6b0c11c466b5cc6f43a25457c670d24473b"
+      "bytes": 1241392,
+      "sha256": "d36152c740ecad11406f1627ba3bcf252929602e0df02b76e55e404d9bcf3768"
     },
     "merged-firmware.bin": {
-      "bytes": 1306944,
-      "sha256": "8867024e623267e46f2482456c3b889f16cf49dc86f53d9f0ca9bcb06a2c3811"
+      "bytes": 1306928,
+      "sha256": "8187f9e068b90d9eeb0ae0a141818edad4e78ce214c7bfcf8303a84f2053a936"
     }
   }
 }

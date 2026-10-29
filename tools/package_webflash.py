@@ -50,5 +50,19 @@ if validation_path.exists():
             'status': 'single_fan_cold_test_passed', 'date': validation['date'],
             'report': '../docs/hardware-validation.json',
             'not_tested': validation['not_tested']}
+    elif validation.get('single_fan_cold_test') == 'passed':
+        # Keep the historical binary identity; transfer only the demonstrated
+        # control-code coverage when the version header is the sole difference.
+        excluded = 'src/FirmwareVersion.h'
+        old = {k: v for k, v in validation.get('source_sha256', {}).items() if k != excluded}
+        current = {k: v for k, v in metadata['source_sha256'].items() if k != excluded}
+        if old and old == current:
+            metadata['hardware_validation'] = {
+                'status': 'version_only_rebuild_of_validated_source',
+                'date': validation['date'],
+                'report': '../docs/hardware-validation.json',
+                'tested_version': validation['version'],
+                'tested_firmware_sha256': validation['firmware_sha256'],
+                'not_tested': validation['not_tested']}
 (web / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
 print('Packaged', version, metadata['hardware_validation']['status'])

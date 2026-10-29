@@ -10,9 +10,10 @@ I wrote the code for my Slide2 7-UP pellet stove, but actually all stoves from E
 
 !! Webflash currenty only works with Wemos D1 Mini ESP32 !!
 
-The current web installer offers **2026.10.29-test1**. Its cold function test on
-one single-fan stove passed on 2026-10-29, including independent register readback
-and restoration. Fan 2/3 hardware, combustion and long-duration stability remain
+The current web installer offers the final release **2026.10.29**. Its control
+implementation passed the cold function test on one single-fan stove on
+2026-10-29, including independent register readback and restoration. The final
+build changes only the version identifier relative to the tested build. Fan 2/3 hardware, combustion and long-duration stability remain
 untested. See [hardware validation](docs/hardware-validation.json).
 Choose **Update** for an existing installation with this repository's partition
 layout; do not select erase if you want to preserve configuration. **New install**
