@@ -10,7 +10,10 @@ I wrote the code for my Slide2 7-UP pellet stove, but actually all stoves from E
 
 !! Webflash currenty only works with Wemos D1 Mini ESP32 !!
 
-The current web installer offers **2026.10.29-test1**, pending stove validation.
+The current web installer offers **2026.10.29-test1**. Its cold function test on
+one single-fan stove passed on 2026-10-29, including independent register readback
+and restoration. Fan 2/3 hardware, combustion and long-duration stability remain
+untested. See [hardware validation](docs/hardware-validation.json).
 Choose **Update** for an existing installation with this repository's partition
 layout; do not select erase if you want to preserve configuration. **New install**
 uses the merged image and requires Wi-Fi/MQTT configuration afterwards.
@@ -159,7 +162,8 @@ from another controller.
 This extension uses only short reads/writes supported by the existing 32-byte
 transport. Channel setpoint controls (including the ambiguous channel-3 read),
 alarm history, statistics, weekly schedules and hydraulic sensors remain outside
-this change. No firmware upload or live stove test is performed by the build.
+this change. The build itself never uploads firmware or performs a live stove test. The
+separate single-fan cold test is documented in the hardware-validation report.
 
 ## Release packaging
 
@@ -174,7 +178,7 @@ The default `webflash/manifest.json` writes only the application at `0x10000`.
 partitions and OTA initialization. New-install images overwrite the NVS area;
 use the update option to preserve an existing configuration. Both installation
 dialogs expose the erase choice. `build-info.json` identifies source hashes,
-binary hashes and the pending hardware-validation status. The firmware reports
+binary hashes and the validation scope for that exact firmware SHA-256. The firmware reports
 its version over serial and `edilkamin/322707E4/firmware_version/state`.
 
 The Android app does not show the bridge's periodic 30s/120s BLE cooldown in the

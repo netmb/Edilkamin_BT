@@ -19,7 +19,8 @@
   <p>Firmware für Wemos D1 Mini ESP32 (4 MB).</p>
   <p id="version">Version wird geladen …</p>
   <p class="notice"><strong>Testversion:</strong> Fan 2/3, korrigierte Steuerungen und zusätzliche MQTT-/HA-Sensoren.
-    Build und simulierte Tests bestanden; Prüfung am Ofen steht noch aus.
+    Build, simulierte Tests und Kaltprüfung an einem Ein-Fan-Ofen bestanden.
+    Fan 2/3 am Gerät, Verbrennungsbetrieb und Langzeitstabilität sind noch ungetestet.
     Die Bluetooth-Pausen bleiben erhalten. <code>pellet_level</code> meldet jetzt <code>Reserve</code> statt <code>Empty</code>.</p>
   <section>
     <h2>Vorhandene Installation aktualisieren</h2>
@@ -43,7 +44,7 @@
   <p>Nach einer Neuinstallation das WLAN <code>Edilkamin_BT_AP</code> öffnen und WLAN sowie MQTT konfigurieren.
     Der erste Funktionstest erfolgt mit versorgter Ofenelektronik und Heizbetrieb OFF.</p>
   <p><a href="https://github.com/netmb/Edilkamin_BT#readme">Anleitung und MQTT-Topics</a> ·
-     <a href="./build-info.json">Build-Prüfsummen</a> · <a href="./firmware.bin">Firmware-Binary</a></p>
+     <a href="../docs/hardware-validation.json">Gerätetest</a> · <a href="./build-info.json">Build-Prüfsummen</a> · <a href="./firmware.bin">Firmware-Binary</a></p>
   <script>
     fetch('./manifest.json', {cache:'no-store'}).then(r => {
       if (!r.ok) throw new Error('manifest');

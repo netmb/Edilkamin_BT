@@ -1,7 +1,18 @@
 {
   "version": "2026.10.29-test1",
-  "hardware_tested": false,
-  "build_base_commit": "714ce29d8b69e9f47f3ef9117501bfa8efdf83dc",
+  "hardware_validation": {
+    "status": "single_fan_cold_test_passed",
+    "date": "2026-10-29",
+    "report": "../docs/hardware-validation.json",
+    "not_tested": [
+      "combustion or physical fan airflow",
+      "Fan 2/3 on a multi-fan stove",
+      "preservation of nonzero foreign control bits on hardware (covered by host tests)",
+      "long-duration hang resistance",
+      "nonzero alarm and pellet reserve conditions"
+    ]
+  },
+  "packaged_from_commit": "4615ca32b8fe5a4892b1afb3793714bd580cd1e8",
   "source_sha256": {
     "src/FanControl.h": "61bbeca5492fe9a831e7f4f7d8b4ec5445322dcf7dffc9c9993f5d7b7eec1854",
     "src/FanDiscovery.h": "ea886ce2f4e0a8d45153f8d685e4b21171886766bd16352a63c216c79938c748",

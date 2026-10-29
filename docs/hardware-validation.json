@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-29",
+  "version": "2026.10.29-test1",
+  "firmware_sha256": "9ab17777b9bcd991e700f93ac48cd6b0c11c466b5cc6f43a25457c670d24473b",
+  "single_fan_cold_test": "passed",
+  "equipment_code": 1,
+  "write_echo_checks": [
+    "target 24 -> 24.0",
+    "target 24.50 -> 24.5",
+    "target 25.6 -> 25.6",
+    "Fan 1 40% and Auto",
+    "Standby ON/OFF",
+    "HVAC off",
+    "Chrono OFF"
+  ],
+  "independent_polling_readback": [
+    "25.6 C = register 0x0100",
+    "Fan 1 level 2 = 40%",
+    "Standby ON",
+    "restored original settings"
+  ],
+  "invalid_input_checks": [
+    "ungueltig rejected; no write in following 7 seconds",
+    "40 C rejected; no write in following 7 seconds",
+    "Fan 2/3 commands rejected on the single-fan stove; no Modbus writes",
+    "invalid HVAC/Standby text rejected; no Modbus writes"
+  ],
+  "discovery_checks": [
+    "single Fan 1 climate control",
+    "Fan 2/3 retained select configs cleared",
+    "climate 5..35 C, non-optimistic"
+  ],
+  "diagnostics": {
+    "current_alarm_code": 0,
+    "warning_flags_raw": "00020060",
+    "pellet_reserve": "OFF",
+    "room_temperature_observed_c": [
+      19.8,
+      19.9
+    ],
+    "exhaust_temperature_observed_c": 26.3
+  },
+  "timing": {
+    "request_reply_samples": 102,
+    "median_ms": 187,
+    "max_ms": 438,
+    "observed_connected_seconds": 30.9,
+    "observed_disconnected_to_reconnected_seconds": 122.6
+  },
+  "transport_errors_in_captures": 0,
+  "restored": {
+    "target_c": 20.0,
+    "fan1": "20%",
+    "standby": "OFF",
+    "relax": "OFF",
+    "hvac_mode": "off",
+    "chrono": "OFF"
+  },
+  "not_tested": [
+    "combustion or physical fan airflow",
+    "Fan 2/3 on a multi-fan stove",
+    "preservation of nonzero foreign control bits on hardware (covered by host tests)",
+    "long-duration hang resistance",
+    "nonzero alarm and pellet reserve conditions"
+  ],
+  "privacy": "Raw serial/MQTT captures, original retained commands, full flash backup and recovered credentials remain local and Git-ignored."
+}
