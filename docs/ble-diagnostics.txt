@@ -1,0 +1,88 @@
+BLE diagnostics and manual alarm acknowledgment — 2026-11-10
+
+Target: Edilkamin Slide2 7 Up with The Mind. USB-tested bridge development build:
+2026.11.10-diagnostics1. Web installer release artifacts:2026.11.10, rebuilt
+from the same src/* files with only FirmwareVersion.h changed. The exact
+development binary and its hardware observations remain in the original
+validation report. Packaging the release does not publish it or flash a device.
+
+Protocol provenance
+- Consumer The Mind 1.3.6 base APK SHA-256
+  ca00e2aa4c2961124534cfe0fd9b73a63c157725f399cbc706919a18195e6074:
+  BluetoothService issues FC03 count8 for identity/version strings;
+  SoftwareSettingsViewModel swaps each register's bytes before ASCII decoding.
+- Official Edilkamin Service 2.4.260529 native library SHA-256
+  6d6dac42b92a74fe780e5766cb5c6cc7ac767ab22395ed1c30322aa6759dc950:
+  DWARF types/layout name componentsInfo board records, machine fields,
+  eeprom counters and database code. Alarm handlers at 0x846e84/0x8acf14
+  use resetAllarme bit1 of 0x031c. The local queue uses FC16.
+  See android-alarm-reset.txt for the retained REA Evidence references.
+
+Identity: all strings are 8 registers / 16 bytes. Optional empty/non-ASCII
+values are unavailable, not evidence that a component is installed.
+Motherboard: serial000A, name0012, bootName001A, bootVersion0022,
+applicationName002A, applicationVersion0032.
+Connection module: name0044, version0064.
+Local interface: name0076, version0096.
+Radio module: name0206, version0226.
+Command panel: name0238, version0258.
+Names follow Service DWARF; older Helper constants used inconsistent roles.
+
+Hardware revision: 02FE low byte /10. Database code: 061F full U16.
+Operating phase/subphase: 02E4 low/high byte. Operating detail/state:
+02E5 low/high byte. Operating substate/alarm: 02E6 low/high byte;
+alarm_raw retains the whole word. State and phase are distinct quantities.
+Logged alarm count033A uses LOWBYTE; highbyte is a ring index. It is not
+a cumulative lifetime alarm counter. Ignitions0334 U16. Working hours
+P1..P5:0335..0339 U16; total is their U32 sum. Device resets/wraps are possible.
+
+Implementation
+- Diagnostics.h owns the bounded field map, request generation and decoding.
+- BleFrame.h bounds response sizes and builds FC03/06/16 request envelopes.
+  Consumer normal replies are complete notifications; MTU300 is requested.
+  Identity reads require negotiated MTU>=51. No speculative fragment joining.
+- Helper decrypts the complete accepted CBC ciphertext. Existing IV and header
+  pairing is retained. Modbus function/count/CRC validate every response.
+- User writes and alarm/control transactions precede diagnostic polling.
+  Failed reads invalidate every diagnostic sharing the same register/count.
+  A diagnostic pass continues after failure, without retrying a bad field forever.
+- HA diagnostic discovery/state are retained; button commands are not retained.
+  Each data entity has bridge and per-reading availability. A stale reading
+  expires after ten minutes; cached values survive ordinary BLE sleep.
+- AlarmReset.h implements a manually requested single write with fresh state
+  and command reads. No state7 => no write. Resetbit already1 => no write.
+  Power bit0==1 => Power command is on, no write or automatic switch-off.
+  Only bit1 is set; other bits are retained. No automatic clearing/pulse/retry.
+  Post-write verification reads state02E5 then alarm02E6. Cleared requires
+  state!=7 AND alarmcode==0; otherwise the result is Alarm active at verification.
+  This initial verification may precede delayed firmware handling; subsequent
+  current state/alarm sensors remain authoritative. Another press never silently
+  clears/re-pulses an already-set bit.
+
+Additional commands are deliberately bounded to diagnosis refresh and the
+explicitly requested manual alarm acknowledgment. No burner/auger actuator
+tests, tuning writes, maintenance resets, firmware flashing or automatic start.
+
+Verification
+Host tests cover the real routing/response code with transport/AES mocks,
+full 48-byte identity replies, bad CRC/length/echo, optional-field failures,
+MTU rejection, control priority, availability and reset verification. The
+isolated reset test exhaustively preserves all 65536 possible command words.
+BleFrame tests use independent CRC vectors and bounds; decoders test byteorder,
+zero values and U32 counter totals. Existing controls retain their tests.
+ESP32 build and all nine host suites passed. A full 4-MB backup was verified;
+the application alone was updated at 0x10000 and its flash hash verified.
+Live BLE negotiated MTU300 and returned 48-byte identity/counter responses.
+23 diagnostic fields supplied valid readings; seven identity fields were
+unavailable and were not discovered as populated components. The initial
+working-hours total1096 matches P1=733 + P2=235 + P3=128 + P4=0 + P5=0.
+The refresh button woke the normal sleeping BLE link and completed a fresh
+pass in 11.68seconds. A manual request on the alarm-free stove returned
+No active alarm. All78 requests in the two serial captures were FC03 reads;
+no FC06/FC16 control or reset write occurred during these live checks.
+No timeout, Modbus exception, invalid CRC/response or watchdog restart was
+observed in those captures. A successful reset of an actual active alarm
+remains untested; no alarm was induced. The Home Assistant discovery payloads
+and values were checked at the broker, without visually checking its frontend.
+Exact binary/source hashes and observations:
+diagnostics-hardware-validation.json.

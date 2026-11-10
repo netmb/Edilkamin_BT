@@ -1,0 +1,509 @@
+Alarmquittierung: The Mind 1.3.6 und Edilkamin_BT
+Untersuchung vom 10.11.2026
+
+Ergebnis
+In der vorliegenden Android-App ist ein Alarm-Reset-Bit benannt, aber kein
+ausgeführter Reset-Ablauf statisch nachweisbar. Die untersuchten Bedien- und
+Schreibpfade zeigen Alarmanzeige, Alarmhistorie und normales Ein/Aus. Eine
+Sequenz "quittieren -> Alarmfreiheit lesen -> getrennt starten" findet sich
+darin nicht. Das bestätigt nicht, dass die Ofen-Firmware keinen Reset kann.
+
+Ziel und Evidenz
+Lokale The_Mind_1.3.6.xapk, Base-Member com.edilkamin.stufe.apk.
+Base-APK SHA-256:
+ca00e2aa4c2961124534cfe0fd9b73a63c157725f399cbc706919a18195e6074
+Die Version ist die vorhandene Datei, keine Aussage über die neueste App.
+
+REA identifizierte und inventarisierte das APK; statische Archivevidenz:
+ev_84652343f0a942649ed58bd2c1a5de207ce70e70577e0902df0b7d4a4cbfbb82
+REA-Androidanalyse war wegen nicht konfiguriertem REA_JADX_MCP_JAR nicht
+verfügbar. Deshalb Offline-Disassemblierung aller vier DEX-Dateien mit den
+bereits installierten Android-SDK-Werkzeugen baksmali/dexlib2 3.0.9 und JDK 17.
+29.364 Klassen wurden disassembliert und nach Reset-Symbolen durchsucht.
+Die nachfolgenden Verhaltensbelege sind Shell-/Smali-Evidenz, keine REA-
+Android-Evidence-IDs. Weder App noch Ofen wurden ausgeführt oder angesteuert.
+
+Belege liegen lokal unter android_apk/analysis/alarm-reset/:
+  evidence-index.json       Artefakt- und Einzeldatei-Hashes
+  reset-symbol-search.json  vollständige Trefferliste der Symbolsuche
+  rea-evidence.json         exportierte REA-Archivevidenz
+  evidence/                 unveränderte relevante Smali-Dateien
+Alle folgenden Smali-Pfade sind relativ zu evidence/; Zeilen beziehen sich
+auf diese unveränderten Dateien. Der android_apk-Ordner ist git-ignoriert.
+
+1. Was ALARM_RESET tatsächlich belegt
+Beobachtung: utils/enums/BitsEnum.smali:130-163 erzeugt ON_OFF mit bitPos=0
+und ALARM_RESET mit bitPos=1. getBitPos liefert die Position, nicht die Maske.
+Die daraus berechnete Maske für ALARM_RESET wäre 1 << 1 = 0x0002.
+
+In allen vier DEX-Dateien gibt es keine direkte ALARM_RESET-Referenz außerhalb
+der Enum-Datei. Die fünf Treffer dort sind Metadaten, Felddefinition,
+Enum-Wertearray und Initialisierung, kein Bedien- oder Transportpfad.
+Auch kein Aufruf von BitsEnum.values()/valueOf() wurde gefunden.
+
+network/CommandsFlags.smali:74-77 enthält außerdem das boolesche JSON-Feld
+alarm_reset. Die Klasse ist Bestandteil von GeneralStatus.commands
+(network/GeneralStatus.smali:82,209). Außerhalb der Datenklasse gibt es keinen
+alarm_reset-/getAlarm_reset-Zugriff. Dieser Datenmodell-Eintrag beweist keinen
+ausgehenden Reset-Request und keine Implementierung im Cloud-Backend.
+
+Ableitung: Bit 1 im gemeinsamen Befehlsregister 0x031C ist ein plausibler
+Reset-Kandidat, weil dieselbe Enum den dort nachgewiesenen ON_OFF-Schalter
+und weitere Befehlsflags beschreibt. Ein tatsächlicher Schreibzugriff auf
+dieses Resetbit, seine Flanken-/Pulssemantik und die Firmwarebedingungen sind
+mit dieser APK nicht belegt. Ein festes Paket 01 06 03 1C 00 02 wäre daher
+kein aus der App verifizierter Reset und würde andere Registerbits löschen.
+
+2. Wie die App Ein/Aus über Bluetooth behandelt
+feature/standby/StandByViewModel.smali:
+  3552-3613: readFireplaceCommands übernimmt die zwei gelesenen Bytes als
+             currentStatus.
+  2164-2387: changeOnOffStatus bildet den Header 01 06 03 1C, toggelt
+             ausschließlich Bit ON_OFF (Bit 0) im Low Byte, übernimmt
+             die übrigen Bits und hängt die Modbus-CRC an.
+  2242-2272: Der lokale isFireplaceOn-Wert wird bereits beim Paketbau
+             umgeschaltet; das beweist keine erfolgreiche Ofenzündung.
+
+Vereinfachtes Verhalten des BLE-Paketbauers:
+  value = letzter gelesener Wert des Registers 0x031C
+  value = value XOR 0x0001
+  sende FC06 auf 0x031C mit value und CRC
+Kein Setzen/Löschen von Bit 1, kein separater Reset-Puls und kein anschließender
+alarmabhängiger Start in dieser Methode.
+
+feature/standby/StandByFragment.smali:
+  10149-10164: Der runde Ein/Aus-Knopf registriert einen Klick-Handler.
+  8582-8675: Handler blockiert in der Substatus-Spanne CARICO_PELLET bis
+             WARMUP und zeigt shutdownDisabledDialog.
+  8730-8821: Pelletreserve bei StoveStatus OFF zeigt eine Warnung und kehrt
+             zurück.
+  8825-8903: Bei BLE-Verbindung und vorhandenem currentStatus ruft der Handler
+             changeOnOffStatus auf und reiht das Ergebnis als writeOp ein.
+  6882-6940: Für ausgeschalteten Ofen mit Zustand ALLARME zeigt die Ansicht
+             fireplace_status_alarm_off ("Off for alarm").
+Es gibt in diesem Klickpfad keine spezielle Alarmquittierung und keine Prüfung
+"Reset bestätigt, jetzt Zündung erlauben". Das Verhalten der Ofen-Firmware
+auf ein normales Power-Toggle bei aktivem Alarm bleibt unbeobachtet.
+
+3. Cloud-Pfad und Alarmseite
+StandByViewModel.changeOnOffStatusMqtt (2389-2713) verwendet je nach bisherigem
+isFireplaceOn einen PowerBody mit value=0 oder value=1. PowerBody.smali:91-110
+setzt den Standardnamen "power". ApiService.smali:904-929 sendet diesen Body
+per PUT an mqtt/command. Kein alarm_reset-Body im untersuchten Pfad.
+Ob der Server intern weitere Aktionen ausführt, ist aus der APK nicht bekannt.
+
+feature/settings/AlarmSettingsFragment und AlarmSettingsViewModel behandeln
+Alarmhistorie, Abfragen, Parsing und Anzeige. clearValues setzt lokale
+Anzeige-/LiveData-Werte zurück; es ist kein Resetbefehl an den Ofen.
+Die APK-Ressource _3_alarm_descr lautet "3 - Pellet end/Stop flame".
+Ein Alarm-Reset-Dialog/-Button wurde in den untersuchten Ressourcen und
+Bedienpfaden nicht gefunden.
+
+4. Vergleich mit der aktuellen Bridge
+src/Helper.h:117 liest 0x02E6 über 01 03 02 E6 00 01.
+src/main.cpp:532-535 publiziert das High Byte als alarm_code.
+Damit gilt: 768 = 0x0300 -> Code 3. alarm_raw ist in diesem Upstream-Pfad
+nicht publiziert; Cyrils Wert stammt offenbar aus seiner modifizierten Version.
+
+src/main.cpp:695 ff. stellt heat/off in die Queue. src/StoveProtocol.h:65-94
+liest vor dem Schreiben 0x031C frisch und ändert ausschließlich Bit 0.
+Es gibt keine implementierte Alarmquittierung und keine frische Alarmprüfung
+als Vorbedingung für heat. Ein Schreib-Echo bzw. hvac_mode=heat ist kein
+Nachweis für Alarmfreiheit oder eine erfolgreiche Zündung.
+
+Wichtige Implementierungsfolge: Einfach ein 0x0002-Paket in die bestehende
+ControlTransaction einzureihen würde nicht ausreichen. Zeile 92 ersetzt nur
+Bit 0 aus dem gewünschten Wert; das gewünschte Resetbit würde verworfen und
+stattdessen aus dem vorherigen Registerwert übernommen. Eine spätere
+Resetfunktion braucht eine eigene, genau definierte Transaktion/Bitmaske.
+
+5. Konsequenz für das neue Issue
+Die Funktionsanforderung ist klar, die exakte Reset-Sequenz noch offen.
+Ein getrennter manueller HA-Button ist ein sinnvoller Entwurf, aber keine aus
+dieser App rekonstruierte vorhandene Funktion. Vor einem Hardware-Schreibtest
+sollten ein funktionierender Hersteller-Bedienablauf, dessen Mitschnitt oder
+belastbare Protokolldokumentation klären:
+  - Wird 0x031C Bit 1 tatsächlich geschrieben?
+  - Ist ein Setzen, Toggle oder Setzen mit späterem Löschen notwendig?
+  - Löscht die Firmware das Bit selbst, und unter welchen Zustandsbedingungen?
+  - Welches Ereignis bestätigt die Quittierung, und wann ist 0x02E6 alarmfrei?
+
+Ein späterer Entwurf sollte andere Registerbits erhalten, nach der Quittierung
+0x02E6 und den relevanten Ofenzustand frisch lesen und keinen Start anhängen.
+Ein neuer manueller Startauftrag sollte selbst aktuelle Alarmfreiheit prüfen.
+Timeout/Schreib-Echo allein darf nicht als gelöschter Alarm behandelt werden.
+Das allgemeine Sensor-Polling mit minutenlang gültigem Cache reicht dafür nicht.
+
+Offene Grenzen
+Beantwortet: APK-Identität; direkte Reset-Symbolreferenzen; normale BLE- und
+Cloud-Powerpfade; Alarmanzeige/-historie; aktueller Bridge-Code.
+Teilweise beantwortet: mögliche Register-/Bitzuordnung (plausible Ableitung).
+Unbeantwortet: funktionierende Reset-Sequenz, Gerätefreigaben, Firmware- und
+Cloud-Server-Verhalten, Verhalten anderer App-Versionen, realer Hardwaretest.
+Kein Firmware-Code geändert; keine GitHub-Nachricht oder Issue erstellt.
+
+6. Ergänzende Internet- und Quellcoderecherche, 10.11.2026
+Die ursprüngliche APK-Untersuchung allein war als Recherche zu eng. Danach
+wurden öffentliche Repositories und Firmware-Bezugsquellen geprüft.
+
+Passende The-Mind-Implementierungen:
+- StopThePcap/edilkamin-ble, Commit
+  f17932e1b4c4a242eb9358095a951cf51d6c1084:
+  https://github.com/StopThePcap/edilkamin-ble/blob/f17932e1b4c4a242eb9358095a951cf51d6c1084/edilkamin_ble/TECHNICAL.md#L244-L251
+  Der Autor dokumentiert Alarm 21 nach Stromausfall: Power-on-Writes werden
+  bestätigt, starten den Ofen aber nicht. Ein BLE-Reset ist dem Projekt nicht
+  bekannt. Das ist eine dokumentierte Beobachtung des Autors, kein hier selbst
+  aufgenommener Mitschnitt. Das Projekt baut auf netmb/Edilkamin_BT und
+  edilkamin.js auf; kein unabhängiger Nachweis für 0x031C Bit 1.
+- AndreMiras/edilkamin.py, f09e4e20d45a4038d0e5dedb18407547019cd5bc:
+  api.py:173-190 liest status.commands.alarm_reset. Kein Reset-Setter.
+  Alle 10 über die GitHub-API gelisteten Fork-Default-Heads ebenfalls geprüft.
+- algra4/ha-edilkamin, a3a7dacfd3f924948df8eadbd1079735e02f821a:
+  Alarmdaten, kein Reset-Service/-Button. Alle 6 gelisteten Fork-Default-Heads
+  ebenfalls geprüft.
+- nghaye/ha-edilkamin, acc4cc25dc278c83572e6bc2c68a39c7b69fa40e:
+  aktueller/letzter Alarm, kein gefundener Resetpfad.
+- AndreMiras/edilkamin.js, 4306b5e16ca104e0fc9c3ecec08396467c39c7c1,
+  und Webapp AndreMiras/edilkamin, 89021460501d0b10c7a1749e67a55924df7a612f:
+  kein Alarmreset in der durchsuchten aktuellen Quelle gefunden.
+- akoonet-homeassistant/edilkamin_control,
+  5bfdd26fd006f8332c2fc2cf1b216349dcdb9f53:
+  HA-Steuerung mit einer von unserem Projekt abgeleiteten ESP32-Firmware;
+  kein Alarmreset in der veröffentlichten Integrationsquelle gefunden.
+  firmware.bin im Webflash-Verzeichnis ist Bridge-Firmware, keine originale
+  Ofenfirmware. Aktueller Tree veröffentlicht keinen C++-Firmwarequellcode.
+
+Suchgrenzen: Default-Branch-Snapshots und relevante Issues/Kommentare;
+keine erschöpfende Prüfung aller historischen Commits/Branches weltweit.
+Quelltext nicht ausgeführt. Vollständige Fork-SHAs und zusätzlicher Bericht:
+.local/research/third-party-alarm-reset-sources.json
+.local/research/third-party-alarm-reset-findings.txt
+
+Andere Gerätegenerationen:
+- JanD88/edilkamin-slide7-modbus,
+  78c17eb840c811c622a74b5145190560263f60a5:
+  echte RS485-Anbindung eines Slide 7 PELE1712 mit anderer Registerkarte;
+  kein Resetbefehl in YAML/Header gefunden.
+  https://jandootjes.nl/posts/edelkamin/
+  Autor beschreibt originale .hex-Ofenfirmware und PIC32/Ghidra-Analyse.
+  Keine Firmwaredatei im Artikel, aktuellen Repo, den drei Commit-Trees oder
+  als Release-Asset gefunden; JanD88/Edilkamin-Slide-7 ist leer.
+- rapzak/Edilkamin_Remote steuert eine ältere Tiny-Funkfernbedienung mit
+  CYRF6936 statt The-Mind-BLE. Kein gefundener Alarmreset.
+- jer-nz/hottoh_api, 0319faa54e93707d5ac7081e620206613ee00dc8:
+  AppFire/Wifier 2.0 per TCP, nicht The-Mind-BLE. Kein passender Reset gefunden,
+  aber eine konkrete, funktionierende Firmware-Downloadquelle.
+
+Firmware tatsächlich heruntergeladen:
+http://update.hottoh.it/update/upgrade_10_5_0.bin
+Fundstelle:
+https://github.com/jer-nz/hottoh_api/blob/0319faa54e93707d5ac7081e620206613ee00dc8/src/hottoh/firmware_update.rs
+HTTP 200, 1.247.456 Bytes, application/octet-stream.
+SHA-256: 34e3f4915c5c3af1e7a8b1c29678a7ea88740112408dcbddd80e4770abc1e044
+Lokal: .local/research/firmware/hottoh-wifier-upgrade_10_5_0.bin
+Herkunftsmetadaten in gleichnamiger .json-Datei. Keine Signaturprüfung,
+keine Codeanalyse und keine Installation. Laut Implementierung Firmware des
+HottoH-WiFi-Moduls Wifier 2.0; keine bestätigte Eignung für Blade 12++/The Mind
+oder als Firmware der Ofen-Hauptplatine.
+
+Konkrete weitere Bezugsquellen/Leads:
+- https://www.delot-compagnie.com/electronique-electrique/423-programme.html
+  Händler bietet HOTTOH-Programme für Ofenplatine und Fernbedienung per E-Mail
+  für 25 EUR an, passend nach Seriennummer und ASOLA/Phoenix-Fernbedienung.
+  Keine Bestellung; keine bestätigte The-Mind-Kompatibilität.
+- https://play.google.com/store/apps/details?id=com.edilkamin.linx
+  Offizielle Edilkamin Service-App für The Mind, Wi-Fi/Bluetooth-Diagnose.
+- https://apps.apple.com/gb/app/edilkamin-service/id6756316948
+  Versionshistorie 1.4.260424 nennt ausdrücklich neue Firmwareversionen.
+  Das ist ein Lead für die Service-App/Updateverteilung, kein Nachweis dafür,
+  dass Firmware im App-Paket eingebettet oder öffentlich frei verfügbar ist.
+  Keine Service-APK über die geprüften Spiegel verfügbar. Die vorhandene
+  Consumer-APK enthält keine gefundenen Firmwareassets.
+
+Ergebnis dieser Recherche: konkreter Firmwaredownload für eine andere
+Generation und zwei weiterführende Bezugswege; noch keine passende originale
+The-Mind-Ofenfirmware und kein belastbarer Alarmreset für dieses Protokoll.
+
+7. Konkrete Android-App Open Edilkamin geprüft
+Nutzerlink: https://play.google.com/store/apps/details?id=com.github.andremiras.edilkamin
+Play-Eintrag und Supportlink verweisen auf AndreMiras/edilkamin. App-ID ist
+in capacitor.config.ts:4 und android/app/build.gradle ebenfalls identisch.
+Prüfung des veröffentlichten Quellcodes bei 89021460501d0b10c7a1749e67a55924df7a612f,
+nicht einer heruntergeladenen Play-APK. App-Version 2026.01.05; Abhängigkeit
+edilkamin.js exakt 1.14.1 laut package.json/yarn.lock.
+useDeviceControl.ts:301-308 führt Power über BLE oder Cloud aus.
+utils/bluetooth.ts:348-355 delegiert an writeCommands.setPower.
+Auch das konkrete veröffentlichte npm-Paket 1.14.1 wurde heruntergeladen und
+statisch geprüft: https://registry.npmjs.org/edilkamin/-/edilkamin-1.14.1.tgz
+SHA-256 01eafd7586a9fac62618b46371e3fe9b8b10026b45e74d4267a82c56fedb2b67.
+BLE schreibt 01 06 03 1C 00 01 (ein) bzw. 00 00 (aus), kein Resetbit.
+Cloud sendet name=power,value=0/1 an mqtt/command. AlarmHistory liest/zeigt
+Historie. Kein Alarmquittierpfad oder Ofenfirmware-Updater im untersuchten
+App-Quellcode gefunden. Anders als unser Read-modify-write überschreibt der
+BLE-Power-Paketbauer das ganze Befehlsregister mit 0/1; keine Bestätigung der
+Resetbit-Semantik. Paket lokal unter .local/research/open-edilkamin-android/.
+
+8. Service-APK: Beschaffungsstand und Quellenbewertung
+APKCube zeigt com.edilkamin.linx, Version 2.4.260529 (Build 115),
+arm64-v8a, als 51-MB-APKS an. Das ist bisher nur eine Seitenangabe;
+keine lokal gesicherte Service-APKS und keine verifizierte Herstellersignatur.
+https://apkcube.com/edilkamin-service/com.edilkamin.linx/download
+Der Downloadversuch führte zu Werbeweiterleitungen; zusätzlich liegt eine
+unerwartete OperaSetup.zip im Downloadordner (3.196.697 Bytes). Diese Datei
+wurde nicht ausgeführt. Ihre Herkunft ist nicht abschließend nachgewiesen.
+Der APKCube-Download ist nach Rückfrage des Nutzers zur Vertrauenswürdigkeit
+pausiert. Keine weitere Menschprüfung ausgeführt.
+
+Am 10.11.2026 geprüfte Reputationsberichte widersprechen einander:
+- https://gridinsoft.com/online-virus-scanner/url/apkcube-com
+  Automatische Einstufung vom 20.10.2026 als Scam, 8/100; heuristische
+  Signale, kein hier unabhängig bestätigter Schadsoftwarebefund.
+- https://tools.malwaretips.com/url-scan/apkcube.com
+  Bericht vom 30.10.2026: Low Risk, 78/100; eine Erkennung unter
+  61 antwortenden Engines, kein Safe-Browsing-Treffer laut Bericht.
+Diese Bewertungen belegen weder Schadsoftware in der Service-App noch die
+Echtheit eines dort angebotenen Pakets. Eine Prüfsumme derselben Downloadseite
+ist keine unabhängige Herkunftsbestätigung. Für belastbare Zuordnung wäre ein
+Vergleich des Signierzertifikats mit einer direkt von Google Play bezogenen
+Installation derselben App erforderlich; die reine APK-Signaturprüfung zeigt
+zunächst nur die kryptographische Gültigkeit der vorliegenden Signatur.
+https://developer.android.com/tools/apksigner
+
+Statische Analyse benötigt keinen aktiven Ofenalarm. Offen bleibt nach
+Beschaffung und Analyse nur die tatsächliche Wirkung eines gefundenen
+Resetbefehls auf der konkreten Ofenfirmware; sie wäre statisch nicht bewiesen.
+
+9. Service-App direkt von Google Play beschafft und analysiert
+Stand 10.11.2026. Dieser Abschnitt aktualisiert die offenen Beschaffungs-
+und Firmwarefragen aus Abschnitt 6 und 8.
+
+Beschaffung und Identität
+- Edilkamin Service, com.edilkamin.linx, versionName 2.4.260529,
+  versionCode 115. Paketinhalt laut aapt2: QtActivity, minSdk 32, targetSdk 36.
+- Keine angeschlossenen ADB-Geräte und kein installierter Android-Emulator.
+  Stattdessen isolierter quelloffener goopdl-Client aus
+  https://github.com/Villoh/goopdl
+  bei Commit 7fe35364d36755f939191eefb2bdcb6f3394d9eb.
+  Anonymer Play-Zugangstoken vom öffentlichen Aurora-Tokenservice;
+  kein Nutzerkonto, keine gespeicherten Nutzer-Zugangsdaten verwendet.
+- Google-Endpunkte details/purchase/delivery auf android.clients.google.com
+  jeweils HTTP 200. purchase ist hier der kostenlose App-Bezug, kein Kauf.
+  Alle drei APK-Dateien unmittelbar von play.googleapis.com heruntergeladen.
+  Dateigrößen und SHA-256 gegen Googles Delivery-Angaben erfolgreich geprüft.
+- Basis-APK: 5.620.555 Bytes,
+  aa09612d6e173247b7683a7a20ecb44e3b42a7e41da7141993d8089a728d9dd8
+  arm64-Split: 51.480.915 Bytes,
+  f2dd0d8f615f6041054852c0e1cb1abb5779d1c168e096f1c57082fdd6a2db42
+  xxhdpi-Split: 82.954 Bytes,
+  43a521fe94f9bc6eaa3e0518ff393ce84bbc39778850fd66d69213c775e17f73
+- apksigner verify erfolgreich für alle drei; APK-v3-Signatur und SourceStamp
+  gültig, gemeinsames Signierzertifikat SHA-256:
+  46af6fc22c42713aa806f37090cf1d999cab6ddde8fedd919cc58e0e9478ba97
+  Das Zertifikats-DN allein ist kein Identitätsbeweis; die direkte TLS-
+  Beschaffung und Googles Delivery-Prüfsummen liefern die Herkunftskette.
+- Originaldateien und Google-Prüfsummenmanifest:
+  android_apk/service-acquisition/google-play-direct/
+  Beschaffungsprotokoll ohne Tokens/signierte Download-URLs:
+  android_apk/service-acquisition/google-play-direct-result.json
+
+Analysegegenstand und Methode
+Die Steuerungslogik liegt in lib/arm64-v8a/libTMS_APP_arm64-v8a.so,
+nicht in den Java-Wrapperklassen. ELF64 AArch64, Qt6, nicht stripped,
+mit DWARF-Debuginformationen, 47.014.680 Bytes, SHA-256:
+6d6dac42b92a74fe780e5766cb5c6cc7ac767ab22395ed1c30322aa6759dc950.
+Statische Analyse mit REA/Hopper, Xcode llvm-objdump/nm/dwarfdump und
+formatbewusster Qt-Ressourcenextraktion. App nicht gestartet/installiert;
+keine Gerätekommandos und keine Cloud-Steuerbefehle gesendet.
+REA-Ghidra nicht konfiguriert; verfügbarer Hopper-Fallback verwendet.
+Basis-APK-Inventar Evidence:
+ev_f7b8114cd3f229f022829cf9d8ee12a2457a658da02ef9a65c7cd5d8709ecd7e
+Native Pseudocode-Evidence:
+ev_2b023c76aa8af1cf19ab23d54eea130927a78bfab5a5406b3e094928ebba93ef
+Hopper fasst hier benachbarte Funktionen im Pseudocode zusammen; deshalb
+exakte Funktionsadressen, ELF-Symbole, Assembly und DWARF gegengeprüft.
+Evidence-Exporte und Auszüge unter android_apk/analysis/service-2.4.260529/.
+
+Alarmreset tatsächlich implementiert
+- MainWindow::on_pushButton_offOn_clicked(bool) VA 0x846e84 und
+  MainWindow::on_pushButton_offOn_2_clicked(bool) VA 0x8acf14.
+- Guard: während isUpdating kein Schreiben.
+- Beide prüfen shared_data.status.machine.statoFunzionamento == 7.
+  Dieses Byte liegt bei shared_data+0x5cb. Es ist nicht der A03-Alarmcode.
+- Bei Zustand 7 ändern beide ausschließlich Bit 1 des Befehlswortes
+  shared_data.status.exchange.commands (shared_data+0x638,
+  Registeradresse 0x638/2 = 0x031c):
+    neu = (alt & ~0x0002) | (checked ? 0x0002 : 0)
+  Andere Zustände: gleicher Button ändert stattdessen offOn, Bit 0.
+- DWARF: shared_data.h:538, resetAllarme, uint16_t-Bitfeld,
+  Bitgröße 1, Datenbitoffset 1. offOn ist Bit 0; Wartungsreset separat Bit 2.
+  Dies ist ein aufrufender Codepfad im ausgelieferten Programm, nicht bloß
+  ein unbenutzter Enumname wie in der Consumer-App. Nicht am Ofen ausgeführt.
+- UI-Zuordnung: updateControls verknüpft Zustand 7 im Abschaltzweig
+  (phase==3) mit 'SPEGNIMENTO PER ALLARME' bzw. bei tipoAllarme==21
+  'SPEGNIMENTO PER BLACKOUT'. Das stützt die Alarm-/Blackout-Bedeutung von 7;
+  keine gefundene benannte Enumdefinition, Feldtyp uint8_t.
+
+Transport und Betätigung
+- Lokaler Queuepfad: RxTxQueue::addOperation(RXTXQUEUE_WRITE=2,
+  0x031c, 1, true); timer_tick VA 0x81a2e4 ff. ruft modbus_pack mit
+  write=1, Slave=1 auf. modbus_pack VA 0xa9480c ruft modbus_tx_16 auf:
+  Funktionscode dezimal 16 = 0x10, auch für genau ein Register.
+  Daher kein aus dieser App belegtes einfaches BLE-0x06-Resetpaket.
+- Im BLE-Pfad wird der Frame von timer_tick mit AEScbc_encrypt verpackt
+  (VA 0x81a9e4) und über DeviceHandler::writeBuffer (0x81a9fc) weitergegeben.
+  DeviceHandler::writeToDevice(QByteArray) ruft bei 0xa890a8
+  QLowEnergyService::writeCharacteristic auf.
+- Separater MQTT-Zweig des Handlers: modbus_tx_06, Slave=0,
+  Register=0x031c, Debugtext 'MQTT CMD: offOn/resetAllarme='.
+  Kein Beleg, dass die Consumer-REST-API einen gleichnamigen Reset akzeptiert.
+- Beide Buttons sind checkable und an clicked(bool) angeschlossen.
+  updateControls aktualisiert ihren Checked-Zustand aus commands.offOn,
+  nicht aus resetAllarme. Kein belegter fester True-False-Puls und keine
+  belegte Haltezeit/automatische Wiederholung in diesen untersuchten Pfaden.
+
+Vier tatsächliche Firmwarecontainer enthalten
+Qt-Ressourcen wurden anhand der ELF-Symbole für struct/name/data gelesen;
+vier Dateiknoten mit flags=0 (keine QRC-Kompression), Längen und SHA gesichert.
+Die Ressourcen enthalten echte Payloadbytes; nicht nur Dateinamen/URLs.
+
+1) :/file/Scheda/EDK2020_LX03202.0_5_0_0000_260213_a_FR_EXEC.lnx
+   385.120 Bytes, SHA-256
+   04acce9bf23d8a00bb4d6276d9327b2fbf189b1cfa1ffc5dcdc46c65cb3f997f
+   http://firmware.linx.it/Edilkamin/The_Mind/motherboard_02.bin
+2) :/file/Scheda/EDK2020_LX03201.2_5_0_0000_260213_a_FR_EXEC.lnx
+   346.592 Bytes, SHA-256
+   60ed7242367955af8bac76292d0b6a8e7a5819efa0c38536d495ef79f7d79896
+   http://firmware.linx.it/Edilkamin/The_Mind/motherboard_01.bin
+3) :/file/Pannello/PANNELLO_COMANDI_FIRMWARE_LX4320_WROOM32_4_2_0000_240115_a_DA_EXEC.lnp
+   1.284.720 Bytes, SHA-256
+   81b15887d6382934013f880c6cb7416ca2d24eb500319aa3ca4d3b01f6ced9c0
+   http://firmware.linx.it/Edilkamin/The_Mind/comPanel.bin
+4) :/file/Pannello/PANNELLO_EMERGENZA_FIRMWARE_LX1121_LX0920_WROOM32_4_2_0000_231212_a_DA_EXEC.lnp
+   1.304.800 Bytes, SHA-256
+   93a1da3345ebae59374fcb6036a06559892baa729b89a280014642603576e2f8
+   http://firmware.linx.it/Edilkamin/The_Mind/emPanel.bin
+
+Alle vier exakten, aus der App gewonnenen URLs zusätzlich per öffentlichem GET
+heruntergeladen: HTTP 200 ohne Authentifizierung; bytegenaue Übereinstimmung
+mit den eingebetteten Ressourcen. HTTP-Transport allein bietet keinen
+Herkunftsschutz; hier Absicherung durch Vergleich mit Google-Play-App-Inhalt.
+Namen zeigen zwei Hauptplatinenvarianten LX03202.0/LX03201.2, Version 5.0,
+und Bedien-/Notfallpanel WROOM32, Version 4.2; Interpretation aus Dateinamen.
+Keine Aussage zur Eignung einer Variante für Marcos konkrete Ofenhardware.
+Payloads haben hohe Entropie und undurchsichtige Header; mögliche
+Verschlüsselung noch nicht bewiesen/entschlüsselt. Keine direkt flashbaren
+Rohimages behauptet. Firmware-Disassemblierung war für den App-Nachweis des
+Resetpfads nicht nötig und ist nicht Teil der abgeschlossenen Codeaussage.
+Extraktion: android_apk/analysis/service-2.4.260529/qrc-file/
+Inventar: android_apk/analysis/service-2.4.260529/qrc-file-inventory.json
+Abgleich: android_apk/analysis/service-2.4.260529/firmware-crosscheck.json
+Serverdateien/HTTP-Metadaten: .local/research/service-firmware-server/
+Reproduzierbarer Parser: .local/research/extract_service_qrc.py
+Vertiefte Einzelberichte: .local/research/service-alarm-findings.txt und
+.local/research/service-firmware-findings.txt
+
+Bedeutung für die Bridge und verbleibende Grenze
+Resetbit 1 und Register 0x031c sind jetzt aus der offiziellen Service-App
+belastbar statisch belegt. Für diese Erkenntnis ist kein Warten auf einen
+neuen Alarm nötig. Bisheriger Bridgepfad in src/StoveProtocol.h:92 ändert
+jedoch nur Bit 0; er würde ein gewünschtes Resetbit nicht übernehmen.
+Eine Umsetzung müsste Bitmaske, lokalen 0x10-Transport und Antwortprüfung
+gezielt behandeln; kein pauschales Wiederverwenden des Power-Befehls.
+Keine Bridge-Änderung vorgenommen, da hier Beschaffung und Analyse beauftragt.
+Offen bleiben die beobachtete Wirkung auf der konkreten Ofenfirmware und
+die genaue sichere Betätigungs-/Rücksetzfolge am Gerät. Ein bestimmter Puls
+oder automatischer Neustart lässt sich aus diesen Befunden nicht ableiten.
+
+10. Firmwareupdate für Marcos Slide2 7 Up / The Mind
+Nutzer korrigierte die anfängliche Modellangabe Slide5 auf Slide2 7 Up,
+Steuerung über The Mind. Board-/Panelkennung und Ist-Firmware noch unbekannt.
+Keine Geräteverbindung oder Updateausführung erfolgt.
+
+Die Service-App enthält zwei Updatewege; der lokale Weg ist WLAN/TCP,
+nicht der oben für die Alarmsteuerung betrachtete BLE-Weg.
+
+Lokaler Service-Updateweg laut tatsächlichen App-Anweisungen
+Die UTF-8-Anweisung bei Dateioffset 0x22d4eb fordert:
+Ofen OFF; an der Fernbedienung SOFTWARE (Menü 10) öffnen, dann
+AGGIORNAMENTO FW und UPDATE BY APP. Separate Anweisung bei 0x21d33d
+fordert, das Telefon mit dem WLAN EDK UPDATE zu verbinden.
+Diese Anweisung stammt aus der offiziellen Service-App; sie ist kein
+Nachweis, dass Marcos installierte Fernbedienungsfirmware genau dieselben
+Menünamen/Nummern oder alle Updatefunktionen besitzt.
+
+MainWindow::on_pushButton_aggiornamento_clicked bei VA 0x89c794 trennt die
+BLE-Verbindung und öffnet die lokale Updateseite. REA-Assembly-Evidence:
+ev_4851f92ec7067eab764f9f1c7956244f2073ad194c9543bfb297564e56189e8a
+Export: android_apk/analysis/service-2.4.260529/rea-update-workflow-evidence.json
+MainWindow::updateProcess bei VA 0x81c78c erstellt einen TCP-Socket zu
+192.168.4.1:1234, fragt FWVERSION ab, lädt einen .lnx-/ .lnp-Container
+und überträgt ihn über MBUPDATE bzw. PEUPDATE und nachfolgende Datenblöcke.
+Bei erkannter Boardkennung LX0320 2.0 wählt die App die Variante02,
+im anderen Codezweig Variante01. Diese pauschale Else-Verzweigung ist kein
+unabhängiger Kompatibilitätsnachweis für eine unbekannte Platine.
+Der begrenzt untersuchte Updater zeigt keinen belegten Versionsvergleich
+und keine belegte Downgrade-Sperre. Version 5.0 aus dem Dateinamen daher
+nicht als zwingend neuer als Marcos installierte Version bezeichnen.
+
+Online/FOTA-Serviceweg
+Separater Einstieg MainWindow::on_pushButton_aggiornamentofota_clicked
+bei VA 0x8a6378, lokal ausgelesenes Statusbyte +0x5cb muss 0 oder 1 sein.
+Die eingebettete Anleitung bei Dateioffset 0x22cfa1 fordert Ofen OFF
+und bestehende Internetverbindung. Mainboard-/Panelhandler veröffentlichen
+urlboard bzw. urlpanel mit den passenden öffentlichen Firmware-URLs über
+einen MQTT-Provider. Keine solche Veröffentlichung von uns ausgeführt.
+Der öffentliche Downloadzugriff auf die Images beweist keine Berechtigung
+eines normalen The-Mind-Nutzerkontos für diesen Service-/FOTA-Befehl.
+
+Zugang und nächster konkreter Schritt
+Herstellerbeschreibung der Service-App richtet sich an technische
+Kundendienstzentren und nennt WLAN/Bluetooth-Diagnose und Konfiguration:
+https://play.google.com/store/apps/details?id=com.edilkamin.linx
+Ein Loginhandler mit Netzwerkprüfung ist vorhanden; Anmeldung, Berechtigungen
+und Updatezugriff mit einem normalen Nutzerkonto wurden nicht getestet.
+Keine Behauptung eines zwingenden CAT-Accounts oder eines offenen Endkunden-
+Updatezugangs. Offiziellen Kundendienst bei fehlendem Servicezugang verwenden.
+
+Zunächst nur die bestehende SOFTWARE-Informationsanzeige ablesen:
+Platine Fw., Core Control Pan, Database sowie vorhandene Hardwarekennung.
+UPDATE BY APP ist ein Betriebsmoduswechsel und zur Identifikation unnötig.
+Nach diesen Werten lässt sich die Firmwarezuordnung weiter prüfen.
+Kein esptool-/ESP32-Bridge-Update und keine Flash-Anweisung für eine beliebige
+.bin-Datei: die vorliegenden Images haben getrennte Zielgeräte/Containertypen.
+Vollständige begrenzte Analyse:
+.local/research/service-update-workflow.txt
+Originalanweisungen mit Byteoffsets:
+.local/research/service-update-ui-instructions.json
+
+11. Firmware-/Hardwarekennung per BLE auslesbar
+Die Anforderung, diese Daten zunächst an der Fernbedienung abzulesen, war
+unnötig eng: Die normale The-Mind-App besitzt dafür einen BLE-Lesepfad.
+BluetoothService.smali:2367 ff. dispatcht readMotherboardName, Bootloader,
+BLVersion, Application und AppVersion an writeFromCharacteristic. Der
+SoftwareSettingsViewModel.handleReceiver-Zweig (ab Zeile 1956) verarbeitet
+die entsprechenden Antwortarten, unter anderem AppVersion ab Zeile 2181.
+Das ist statischer App-Code, noch keine aktuelle Messung an Marcos Ofen.
+
+Vorhandene Definitionen in src/Helper.h:151-162, Modbus Funktion 03,
+jeweils 8 Register = 16 Datenbytes:
+- 0x0012: Hauptplatinenname/Hardwarekennung
+- 0x001a: Bootloadername
+- 0x0022: Bootloaderversion
+- 0x002a: Hauptplatinen-Anwendungsname
+- 0x0032: Hauptplatinen-Anwendungsversion
+- 0x0064: Emergency-Panel-Version
+- 0x0096: Command-Version (Bezeichner aus vorhandener Definition;
+  die genaue Abgrenzung zur Fernbedienung/Bedienpanel separat verifizieren)
+
+Im aktuellen queryQueue in src/main.cpp:128 fehlen diese Operationen;
+auch processBtResponseData besitzt dafür keine String-Auswertung/Publikation.
+Zusätzlich nimmt der aktuelle Empfangspfad nur 32 entschlüsselte Bytes an,
+davon 12 Bytes Modbus ab Offset 20. Eine 8-Register-Antwort benötigt bereits
+21 Modbusbytes inklusive CRC. Die vorhandenen 8-Register-Konstanten lassen
+sich deshalb nicht unverändert allein durch Einhängen in die Queue nutzen.
+Für eine Bridge-Erweiterung wären passende Antwortlängen/Reassemblierung
+oder verifiziert unterstützte Teilabfragen sowie Textdekodierung erforderlich.
+
+MQTT firmware_version/state enthält EDILKAMIN_VERSION aus FirmwareVersion.h,
+also die Version der ESP32-Bridge. Sie ist kein Ofen-Firmwarestand.
+Keine Bridge-Implementierung oder Live-BLE-Abfrage in diesem Analyseschritt.

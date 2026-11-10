@@ -1,0 +1,502 @@
+Firmware 5.0 fuer Slide2 7 Up / The Mind
+Stand: 10.11.2026. Reine Analyse; kein Update am Ofen ausgefuehrt.
+
+Ergebnis
+========
+Die Service-App ordnet der Hauptplatine LX0320 1.2 ein offizielles
+5.0-Paket zu. Damit ist die Hardware-Zuordnung gut belegt. Die Freigabe
+des direkten Sprungs von 3.6.221008a mit Bootloader 2.0.211112a sowie
+die Erhaltung der konkreten Ofenparameter sind weiterhin ungeklaert.
+Eine passende Hardwaredatei allein beweist diese Voraussetzungen nicht.
+Neu gefundener Leitfaden aus2024 dokumentiert fuer AIR-Geraete dieser
+abgebildeten Fernbedienungsbauart einen USB-Weg: erst Handfernbedienung,
+dann Hauptplatine/Notpanel. Er ist unten mit Herkunft und Grenzen erfasst.
+
+Tatsaechlich zuvor per Bluetooth gelesener Ausgangsstand
+======================================================
+Modell laut Benutzer: Edilkamin Slide2 7 Up, The Mind
+Hauptplatine: LX0320 1.2
+Anwendung: EDK2020_MB / 3.6.221008a
+Bootloader: BOOT EDK2020_MB / 2.0.211112a
+Verbindungs-/Notbedienmodul: LX0920 / 3.1.220613a
+Handfernbedienung / "Remote control": 3.0.220221a (vom Benutzer abgelesen;
+Hardwarekennung der Handfernbedienung nicht bestimmt)
+Datenbankkennung: 3
+Quelle: docs/diagnostics-hardware-validation.json.
+Die Handfernbedienungs-Version stammt aus der spaeteren Benutzerbeobachtung,
+nicht aus dem damaligen Bluetooth-Mitschnitt.
+Die Modellidentitaet ist eine Benutzerangabe; Datenbankkennung 3 wurde
+nicht unabhaengig zu einer modellbezogenen Freigabetabelle aufgeloest.
+
+Passendes Paket und Herkunft
+===========================
+Service-App Android 2.4.260529, Paket com.edilkamin.linx, Build 115,
+direkt aus Google Play; Signatur und Google-Downloadhash wurden geprueft.
+Native Bibliothek libTMS_APP_arm64-v8a.so, SHA256:
+6d6dac42b92a74fe780e5766cb5c6cc7ac767ab22395ed1c30322aa6759dc950
+
+Enthaltenes Hauptplatinenpaket:
+EDK2020_LX03201.2_5_0_0000_260213_a_FR_EXEC.lnx
+346592 Bytes, SHA256:
+60ed7242367955af8bac76292d0b6a8e7a5819efa0c38536d495ef79f7d79896
+
+Von der App benutzte URL:
+http://firmware.linx.it/Edilkamin/The_Mind/motherboard_01.bin
+Am 10.11.2026 erneut gelesen: identischer SHA256, Last-Modified 27.04.2026.
+Die Uebereinstimmung mit dem signierten Google-Play-Artefakt stuetzt die
+Dateizuordnung unabhaengig vom unverschluesselten HTTP-Transport.
+
+Nicht verwechseln: motherboard_02.bin gehoert zu LX0320 2.0.
+Die App vergleicht exakt mit LX0320 2.0 und benutzt sonst den 1.2-Zweig.
+Diese sonst-Auswahl ist keine allgemeine Freigabe fuer unbekannte Platinen;
+hier stimmt die ausgelesene Kennung tatsaechlich mit dem Paketnamen ueberein.
+
+Passendes LX0920-Paket im selben Artefakt:
+PANNELLO_EMERGENZA_FIRMWARE_LX1121_LX0920_WROOM32_4_2_0000_231212_a_DA_EXEC.lnp
+1304800 Bytes, SHA256:
+93a1da3345ebae59374fcb6036a06559892baa729b89a280014642603576e2f8
+URL: http://firmware.linx.it/Edilkamin/The_Mind/emPanel.bin
+
+Vorgesehener App-Ablauf
+======================
+1. Online/FOTA: Ofen in OFF und mit Internet verbunden, laut eingebetteter
+   App-Anleitung. Service-App mit dem richtigen Geraet verbinden und die
+   Online-Aktualisierung waehlen. Die App wird offiziell fuer technische
+   Kundendienstzentren angeboten. Die APK besitzt einen Login mit serverseitiger
+   Tokenpruefung; Zugang und Berechtigungen eines normalen The-Mind-Kontos
+   fuer diesen Ablauf wurden nicht ausprobiert.
+2. Die Funktion "Entrambi" (beide) setzt AggiornaTutto und fordert zuerst
+   das Panel-/Verbindungsmodul-Update auf 4.2 an.
+3. Nach passender Erfolgsmeldung dieses Moduls fordert die App automatisch
+   das Hauptplatinen-Update auf 5.0 an. Das ist eine implementierte
+   Reihenfolge, kein aus Dateinamen abgeleiteter Vorschlag.
+4. Danach alle Versionsanzeigen erneut lesen und Parameter, Datenbank,
+   Warnflags sowie Bridge-Kommunikation mit dem Ausgangsstand vergleichen.
+   Dieser Schritt wurde am Geraet noch nicht ausgefuehrt.
+
+Es gibt auch einen separaten Hauptplatinen-Button. Panel zuerst ist daher
+der belegte kombinierte Ablauf, keine belegte universelle Mindestbedingung.
+Die App wartet nach Panel-Erfolg intern drei Sekunden vor der Anforderung
+des Hauptplatinen-Updates; daraus keine manuelle Warteanweisung ableiten.
+
+Alternative lokale Aktualisierung laut eingebetteter App-Anleitung:
+Ofen OFF -> Fernbedienung SOFTWARE (Menue 10) -> AGGIORNAMENTO FW ->
+UPDATE BY APP -> Telefon mit WLAN "EDK UPDATE" verbinden -> lokale
+Aktualisierung in der Service-App. Uebertragung an 192.168.4.1:1234/TCP.
+Die App trennt dafuer die Bluetooth-Verbindung. Der lokale Ablauf enthaelt
+keine nachgewiesene automatische Kombination beider Updates. Die genauen
+Menuepunkte auf der derzeitigen Geraetefirmware wurden nicht live geprueft.
+Die vorhandene BLE-/Home-Assistant-Bridge implementiert keinen Firmware-Updater.
+
+Was fuer den konkreten Sprung noch fehlt
+=======================================
+- Akzeptiert Bootloader 2.0.211112a das 5.0-Paket direkt ab 3.6.221008a,
+  oder braucht es eine Zwischenversion bzw. ein Bootloader-Update?
+- Kann LX0920 3.1.220613a den angebotenen 4.2-Updateweg direkt ausfuehren?
+- Werden Datenbankkennung 3 und die User-/Installer-/CAT-/OEM-Parameter
+  beim Sprung erhalten, konvertiert oder durch Werkswerte ersetzt?
+- Welches vom Hersteller unterstuetzte Sicherungs-/Wiederherstellungs-
+  verfahren gilt fuer diese Ausgangskombination und einen Updateabbruch?
+
+Die untersuchten lokalen/FOTA-Updatefunktionen enthalten keine solche
+Mindestversions- oder Migrationsfreigabe. Das ist ein begrenzter statischer
+Befund; Pruefungen im Bootloader oder an anderer Stelle bleiben moeglich.
+Die Container wurden nicht entschluesselt; hohe Entropie und die Dateiendung
+sind kein Beweis ihrer internen Struktur. Sie sind keine nachgewiesenen
+rohen Flashabbilder, die sich mit esptool direkt schreiben lassen.
+Bei gezielter Internetrecherche wurde keine passende Herstellerfreigabe
+fuer genau diese Kombination gefunden. Der offizielle iOS-Changelog
+erwaehnt neue Firmwareversionen im April 2026, aber keine Migrationsmatrix.
+
+Parameter und Sicherung
+======================
+Das Service-Schema enthaelt getrennte Kompatibilitaetskennungen fuer
+User-, Installer-, CAT- und OEM-Parameter sowie NVM-Kompatibilitaet/CRC.
+Die Existenz dieser Felder belegt keine automatische Migration.
+Der analysierte CSV-Export erfasst Diagnose und Betriebswerte; eine
+vollstaendig wiederherstellbare EEPROM-Sicherung ist damit nicht belegt.
+"Reset parametri" ueberschreibt laut App alle Parameter mit Werkswerten.
+Vor einer Ausfuehrung muessen daher die konkreten Ofen-/Serviceeinstellungen
+einschliesslich Zeitprogrammen und Kalibrierungen ueber ein geeignetes
+Serviceverfahren gesichert bzw. dokumentiert werden. Rohdaten aus einem
+anderen Firmware-Schema sind keine validierte Ruecksicherung.
+Das vorhandene USB-Backup des ESP32 sichert ausschliesslich die Bridge.
+
+Nachtrag: Login und Erreichbarkeit der Updatefunktion
+====================================================
+Die Android-Service-App hat Benutzername-/Passwortfelder und einen Login-
+Button. Der normale Ersteinstieg ist die Loginseite. Installation aus
+Google Play ist daher nicht mit bereits freigeschaltetem Servicezugang
+gleichzusetzen. Ein normaler The-Mind-Nutzerlogin wurde nicht ausprobiert.
+
+Belege aus demselben APK-Artefakt:
+- Loginhandler 0x89cb84, Laenge 6096; liest UI+0x38e8 und UI+0x3900.
+- QNetworkRequest benutzt https://api.edilkamin.com/Token (Literal0x21b575).
+  Formfelder grant_type=password und username; Passwort-abgeleiteter Wert;
+  POST 0x89da54. Die exakte Authentisierung wird hier nicht reproduziert.
+- Antwortcallback 0x8bae9c, Laenge4192, liest JSON access_token, Ruolo und
+  LightDesc. Leerer Token wird als Loginfehler behandelt. Erfolgszweig setzt
+  gespeicherten Loginstatus und wechselt bei0x8bb7ac auf Seite21.
+- Fehlermeldung im Fehlercallback0x8bbefc: Credenziali errate!
+- setupUi ordnet der Loginseite den Hauptstack-Index17 zu. Constructor
+  0x805b78 und Erstloginzweig0x80e1c0 setzen17; Logout ebenso0x89e63c.
+- Lokaler Updatebutton liegt auf der Betriebs-/Startseite. Sein Handler
+  0x89c794 enthaelt selbst keine Authpruefung. Daraus folgt keine normale
+  loginfreie Erreichbarkeit: die davorliegende UI-Navigation beginnt beim
+  Login. Fuer Online-Update gilt dieselbe Unterscheidung.
+- Die ausgewerteten Rollen steuern u.a. die Sichtbarkeit von CAT-Parametern
+  (UI+0x12f0) und Installateurparametern (UI+0x1020). In den untersuchten
+  direkten Zugriffen auf lokalen Updatebutton UI+0x68 und FOTA-Button
+  UI+0xb0 sowie den BLE-/WiFi-Auswahlhandlern wurde keine zusaetzliche
+  rollenabhaengige Sperre dieser Updatebuttons gefunden. Das beweist weder
+  serverseitige Berechtigung noch erfolgreiche Ausfuehrung fuer ein Konto.
+
+Fazit: Androidinstallation ist moeglich; die App enthaelt den Firmware-
+Updater. Fuer die normale Bedienung muss zuerst der Service-Login gelingen.
+Ob die eigenen The-Mind-Zugangsdaten akzeptiert werden und welches Konto
+Edilkamin konkret freigibt, ist durch diese statische Analyse nicht belegt.
+Kein Loginversuch, keine Kontoregistrierung und kein Update wurden ausgefuehrt.
+Ergaenzende lokale Belege: .local/research/service-login_response.asm,
+.local/research/service-login_response_callback.asm,
+.local/research/service-login-ui.txt.
+REA/Hopper-Querpruefung Antwortcallback:
+ev_4079cc727480a0e480b9a5a0affab3b6553f9a68cdfaf0d5ededa7101dcefc8d
+Export: android_apk/analysis/service-2.4.260529/rea-service-login-evidence.json
+
+Nachtrag: Account-Anforderungen / oeffentliche Registrierung
+==========================================================
+Erneute Pruefung am10.11.2026: Storebeschreibung, offizielle reservierte
+Bereiche, Loginoberflaechen, oeffentliche API-Hilfeseiten und native APK-UI.
+Belegt ist die Anforderung eines vom Servicebackend akzeptierten Kontos.
+Im untersuchten Antwortcallback ist ein nichtleerer access_token die
+Zulassungsbedingung; die Rollenpruefung folgt danach. Eine ausschliessliche
+Zulassung der Rolle CAT ist dort gerade NICHT belegt. Die Bezeichnung
+MAIN USER ist ein Service-Rollenliteral und kein Beweis, dass ein normaler
+The-Mind-Endkundenaccount akzeptiert wird.
+
+Keine Selbstregistrierungsfunktion oder Passwortwiederherstellung in der
+untersuchten nativen Service-UI gefunden. Clientseitig werden leere Felder
+abgelehnt; Benutzername maximal35 und Passwort maximal16Zeichen in dieser
+UI. Diese Grenzen sind keine belegte allgemeine Server-Passwortpolicy.
+
+Die Herstellerseite /it/area-riservata verweist fuer Haendler, CAT und
+Agenten auf das B2B-Portal. Dessen Login bietet Passwortwiederherstellung;
+keine oeffentliche Neuregistrierung wurde auf der geprueften Loginseite
+angeboten. Daraus folgt NICHT, dass genau diese B2B-Zugangsdaten automatisch
+die Service-App freischalten; die gemeinsame Kontenquelle ist unbestaetigt.
+Die Produktregistrierung auf der Herstellerwebsite ist kein nachgewiesener
+Weg, ein Service-App-Konto zu erhalten.
+
+Die oeffentliche API-Hilfe war per HTTP-GET abrufbar. Ihre Auth-Hilfeseiten
+beschreiben Request-/Responseformate, aber weder Vergabevoraussetzungen
+fuer Privatkunden noch eine Freigabe des Service-Updaters. Es wurden nur
+Dokumentationsseiten gelesen, keine Auth-/Reset-/Anlagefunktionen aufgerufen.
+
+Die normale The-Mind-App hat eine eigene Amplify/Cognito-Anmeldung und
+Endkundenregistrierung. Ein zusaetzlicher Cognito-Tokenendpunkt in der
+Service-App ist fuer sich kein Beweis gemeinsam nutzbarer Benutzerkonten:
+ApiClient::requestToken0xc3dd5c verwendet grant_type=client_credentials,
+danach ApiClient::getSupport0xc3e2b0 den /support/...-Pfad. Dieser untersuchte
+Maschinen-Tokenablauf ist vom Account-Login0x89cb84 zu unterscheiden.
+
+Praktische Antwort: Mit einem passenden Servicezugang stellt die APK den
+Updater und die zu LX0320 1.2 passende Datei bereit. Ein frei registrierbarer
+Privatkundenzugang ist weiterhin nicht belegt. Der Benutzer meldete am
+10.11.2026, dass der Login mit seinen normalen Zugangsdaten in der Service-
+App nicht moeglich ist. Er bestaetigte anschliessend, dass sein Passwort
+kuerzer als16Zeichen ist und fuer den Login in der normalen The-Mind-App
+funktioniert. Abschneiden durch die Passwort-Hoechstlaenge ist damit als
+Erklaerung dieses Versuchs ausgeschlossen. Die genaue Service-Fehlermeldung
+und die Laenge des Benutzernamens sind noch unbekannt. Damit funktioniert
+der Endkundenlogin fuer sein Konto im gemeldeten Service-Versuch nicht.
+Dieser Einzelversuch beweist dennoch
+keine allgemeine CAT-only-Serverpolicy. Deshalb ist ein Selbstupdate allein
+durch Installation/Endkundenregistrierung kein bestaetigter Weg. Auch ein
+erfolgreicher Login klaert nicht die noch offenen Firmware-/Parameterfragen.
+
+Fuer eine verbindliche Auskunft zur Kontoerteilung nennt der offizielle
+Google-Play-Eintrag als App-Support daniele.baroni@edilkamin.com.
+Konkrete Frage: Koennen Eigentuemer einen Servicezugang fuer ihr eigenes
+The-Mind-Geraet erhalten, gelten The-Mind-Zugangsdaten, und ist die lokale
+Firmwareaktualisierung mit diesem Konto freigeschaltet?
+Keine Anfrage wurde durch den Agenten versendet, kein Konto angelegt und
+kein Login durch den Agenten versucht. Der oben genannte Loginversuch ist
+eine Benutzerbeobachtung, kein vom Agenten aufgezeichneter Netzwerkablauf.
+
+Quellen dieses Nachtrags:
+https://play.google.com/store/apps/details?id=com.edilkamin.linx&hl=de
+https://www.edilkamin.com/it/area-riservata
+https://b2bgroup.edilkamin.com/Login.aspx
+https://api.edilkamin.com/Help
+.local/research/service-account-requirements-native.txt
+.local/research/service-account-web/ (oeffentliche HTML-Belege)
+
+Nachtrag: Eigener lokaler WLAN-Client ohne Servicekonto
+=====================================================
+Vollstaendige statische Pruefung der lokalen Transferfunktion updateProcess
+(0x81c78c,9956Bytes) sowie sendMsg(QByteArray) und readTcpData:
+Der App-Client konstruiert und sendet in diesem Ablauf keine Benutzerkennung,
+kein Passwort, keinen Bearertoken und keinen Challenge-Response-Nachweis.
+FWVERSION-Antwortinhalt wird nach dem Split wieder verworfen; ein darin
+eventuell enthaltener Nonce wird in diesem Ablauf nicht weiterverwendet.
+Der lokale Netzwerkablauf ist deshalb unabhaengig vom Service-Account-Login
+der App reproduzierbar. Ein eigener Client erfordert keine modifizierte APK.
+Das ist eine Aussage ueber den analysierten Clientcode, kein beobachteter
+erfolgreicher Zugriff auf den Updateempfaenger dieses konkreten Ofens.
+
+Beobachtetes Protokoll:
+- TCP192.168.4.1:1234 ueber das zuvor manuell aktivierte WLAN EDK UPDATE.
+- Erste Anfrage: ASCII FWVERSION (9Bytes, kein angehaengtes Zeilenende).
+- Beginn: ASCII MBUPDATE bzw.PEUPDATE plus Containerlaenge als uint32BE.
+- Erwartete Startantwort: MBUPDATE=0 bzw.PEUPDATE=0.
+- Datenblock: derselbe8Byte-Kommandopraefix, Blocknummer uint16BE (ab1),
+  Nutzlaenge uint16BE, maximal1408Originalbytes aus dem Container.
+- Erwartete Blockantwort: passender Praefix mit '=' und dezimaler Blocknummer.
+  ERR1 fuehrt in der App zur Wiederholung desselben Blocks; andere Fehler
+  brechen ab. Die Bedeutung von ERR1 wurde nicht als CRC-Fehler nachgewiesen.
+- Hauptplatinenpaket346592Bytes:247Bloecke, letzterBlock224Bytes.
+  LX0920-Paket1304800Bytes:927Bloecke, letzterBlock992Bytes.
+- Kein gesondertes COMMIT-Kommando in dieser Funktion. Letzte Hauptplatinen-
+  Quittierung bedeutet nur Download/Handoff; die App fordert danach zum
+  Warten auf das eigentliche Update auf. Keine neue Versionsabfrage folgt.
+
+Wichtige Grenzen einer Rekonstruktion:
+Die App ersetzt ihren Empfangspuffer bei jedem readAll und prueft bereits
+bei einem einzelnen empfangenen Byte. Ein eindeutig definierter ACK-Terminator
+ist aus dieser Funktion nicht belegt. Socket-Readgrenzen sind keine TCP-
+Nachrichtengrenzen. Ausserdem ist fuer einen verbundenen, aber schweigenden
+Empfaenger kein ACK-Timeout in State9 und keine ERR1-Wiederholungsobergrenze
+nachgewiesen. Ein eigener Uploader sollte diese Schwaechen nicht uebernehmen;
+vollstaendige Antwort-/Fehlerframes muessen am Empfaenger verifiziert werden.
+Die Firmwarecontainer werden unveraendert uebertragen. Eine gegebenenfalls
+geraeteseitige Signatur-/Entschluesselungspruefung wird damit nicht umgangen.
+
+Noch am Geraet zu klaeren: Existenz/Zugaenglichkeit von UPDATE BY APP bei
+der installierten Firmware, Erreichbarkeit des AP/TCP-Dienstes, eventuelle
+WLAN-Zugangsdaten, reale Antwortformate und eigentliche Imageannahme.
+Die offenen Bootloader-/Zwischenversions-/Parametermigrationsfragen fuer
+3.6.221008a ->5.0 bleiben davon unberuehrt.
+
+Benutzerbeobachtung nach der Menuepruefung: SOFTWARE zeigt Eintraege wie
+"Remote control" und "Mainboard"; AGGIORNAMENTO FW/UPDATE BY APP wurde
+dort nicht gefunden. Der in der Service-App beschriebene Aktivierungsweg
+ist somit fuer diese konkrete Fernbedienung weiterhin NICHT bestaetigt.
+Die Softwareseite der aelteren Herstelleranleitung beschreibt nur Platinen-,
+Bedienpanel-Firmware und Datenbankinformationen (italienische Slide2-7-Up-
+Anleitung942321,Seite42), keine WLAN-Updateaktivierung. Damit ist nicht
+bewiesen, dass die Hardware den lokalen Empfaenger ueberhaupt nicht besitzt
+oder dass eine bestimmte Tastenkombination/Servicefreigabe ihn aktiviert.
+Keine solche alternative Tastenkombination wurde belegt. Der Benutzer
+bestaetigte danach vollstaendiges OFF bei der Menuepruefung und die Version
+"Remote control"3.0.220221a. Eine fehlende OFF-Bedingung erklaert den
+fehlenden Eintrag in diesem Versuch damit nicht. Eine erforderliche
+Mindestversion der Fernbedienung oder ein alternativer Aktivierungsweg sind
+weiterhin nicht belegt. Die Handfernbedienung darf nicht allein anhand der
+Versionsnummer mit LX0920 oder LX4320 und deren4.2-Paketen gleichgesetzt
+werden; die zugehoerige Hardwarekennung fehlt.
+
+Gezielte Nachpruefung auf alternativen Aktivierungsweg:
+on_pushButton_aggiornamento_clicked trennt BLE und wechselt auf die lokale
+Updateansicht, ohne einen Aktivierungsbefehl an den Ofen zu senden.
+updateProcess erwartet danach bereits den TCP-Dienst am Update-AP. Die
+zusammen mit der Anleitung eingebettete WifiUpdate-Grafik zeigt nur die
+bereits aktive WLAN-Verbindung, keine weitere Aktivierungsfolge.
+DWARF enthaelt zwar codiceStartOTA und codiceResetForBootPC; in der
+begrenzten statischen Referenzsuche wurde jedoch kein zugehoeriger
+App-Schreibpfad, Ausloesewert oder nachgewiesener AP-Effekt gefunden.
+Diese Feldnamen sind deshalb keine validierten Aktivierungsbefehle.
+Auch die untersuchten Software-/Kommandoklassen der normalen The-Mind-App
+belegen keinen alternativen Einstieg. Keine Registerwerte wurden ausprobiert.
+Ergebnis fuer diese Geraetekombination: Transferprotokoll rekonstruierbar,
+Aktivierung des lokalen Updateempfaengers weiterhin ungeklaert. Ein lokales
+Selbstupdate ist damit auf diesem konkreten Ofen noch kein bestaetigter Weg.
+Detailbelege: .local/research/service-update-mode-activation.txt und
+.local/research/update-mode-consumer-crosscheck.json.
+
+Vorbereitete reine Identifikationsprobe (git-ignoriertes Analysewerkzeug):
+.local/research/probe_edk_update.py
+Ohne Argument: keine Netzwerkaktion. Mit --probe: verbindet ausschliesslich
+mit192.168.4.1:1234 und sendet nur FWVERSION, sammelt Rohantwort mit begrenztem
+Timeout und gibt Text/Hex aus. Keine Firmwaredatei und keine Uploadfunktion.
+Stillezeit bei der Rohdatensammlung ist keine bewiesene Protokollrahmung.
+Ein lokaler TCP-Testserver mit geteilter Antwort bestaetigte Zusammensetzen
+der Daten und exakt FWVERSION als einzige ausgehende Nutzdaten. Das ist ein
+Werkzeugtest, kein Ofentest. Kein WLAN-Wechsel, Probezugriff oder Firmware-
+Schreibbefehl am Ofen wurde durch den Agenten ausgefuehrt.
+
+Detailbeleg: .local/research/service-local-update-protocol.txt
+REA/Hopper updateProcess-Assembly:
+ev_dcadc1e80954e8bf0cbdb7a32abae9f53f4447de9a6532c8b6bc0d55ebaed02d
+Hopper fasst auch Nachbarfunktionen zusammen; die Funktionsgrenzen wurden
+deshalb anhand der ELF-Symbolgroesse und des begrenzten llvm-objdump-Auszuges
+service-update-arm64.asm kontrolliert.
+
+Neuer Quellenfund: USB-Verfahren fuer die alte AIR-Fernbedienung
+==============================================================
+Bei der gezielten Internetrecherche nach3.0.220221a, EDK UPDATE und alten
+The-Mind-Updateverfahren wurde eine oeffentliche Kopie des Edilkamin-
+Rundschreibens REVASS1/24 zur Veroeffentlichung der4.2-Notpanel-/Hydropanel-
+Firmware gefunden. Das Schreiben ist mit After Sales Service / Edilkamin
+S.p.A. unterzeichnet und verweist per Hyperlink auf einen eigenen2-seitigen
+Leitfaden fuer AIR und HYDRO. Die Originalitaet der Drittanbieter-Kopie
+wurde nicht durch eine digitale Herstellersignatur authentifiziert.
+
+Rundschreiben:
+https://www.scribd.com/document/798552410/Edilkamin-Circulaire-REVASS-1-24-Mise-a-Jour-the-MIND-Version-4-2
+Der Link war in der oeffentlich sichtbaren Seite enthalten und wurde aus
+deren Linkebene gelesen, ohne Login oder Umgehung einer Zugriffssperre:
+https://drive.google.com/file/d/1YSpNvZXdDxO50-rwGMz5XHHQSJHye29z/view?usp=drive_link
+Zusaetzlicher oeffentlicher Inhaltsmirror des Leitfadens:
+https://fr.scribd.com/document/798552492/Mise-a-Jour-the-MIND
+Der automatisch geaenderte Scribd-Titel "JBL Bar2.1" ist falsch; die
+sichtbaren2Seiten zeigen eindeutig The Mind / Edilkamin AIR und HYDRO.
+
+Leitfaden lokal:
+.local/research/update-ap-web/mise-a-jour-the-mind.pdf
+1007528Bytes,2Seiten, PDF-Metadatum Erzeugung24.01.2024, Author Marco Torquato,
+SHA256 d8f7168bc532f2f7b1c10e2e9050512e7a91f9fd539a118ec2fc81e37fc7ae8f
+Herkunftsprotokoll: gleicheDateibasis.provenance.json.
+Beide Seiten wurden gerendert und visuell geprueft; Dateinamen stehen als
+Bildinhalt in Windows-Explorer-Screenshots und wurden nicht nur aus einem
+unvollstaendigen Textextrakt abgeleitet.
+
+Seite1, AIR, zeigt optisch dieselbe The-Mind-Handfernbedienungsbauart wie
+das Benutzerfoto. Genannt werden ein USB-Stick maximal8GB und drei Dateien:
+- RADIOCOMANDO_FIRMWARE_LX0620_ST_4_0_0000_230218_a_FR_EXEC.lnr
+- PANNELLO_EMERGENZA_FIRMWARE_LX1121_LX0920_WROOM32_4_2_0000_231212_a_DA_EXEC.lnp
+- EDK2020_LX03201.2_4_0_0000_230220_a_FR_EXEC.lnx
+Die Zeilen belegen drei getrennte Firmwarefamilien. Sie bestaetigen nicht
+unabhaengig die Hardwarekennung der tatsaechlichen Handfernbedienung.
+
+Dokumentierter AIR-Ablauf (noch nicht am Benutzergeraet ausgefuehrt):
+1. ZUERST Handfernbedienung: eine Batterie herausnehmen, vorbereiteten
+   USB-Stick direkt am rueckseitigen Anschluss der Fernbedienung einstecken,
+   Batterie wieder einsetzen. Anzeige blinkt bis zum Abschluss.
+2. DANACH Hauptplatine/Notpanel: Ofen stromlos, Stick am rueckseitigen
+   Anschluss des Ofens oder direkt an der Platine einsetzen, Strom wieder
+   einschalten. Sequenzieller Fortschritt P01/P02/... und danach S01/S02/...;
+   Abschluss mit langem und zwei kurzen Toenen, Panel geht in PAIR.
+Dieser Ablauf benutzt keine Service-App und enthaelt keine Accountanmeldung.
+Seite2 HYDRO hat eine andere Hardware/Abfolge; sie wird nicht auf Slide2
+uebertragen. Dateisystem, exakter Steckertyp, Wiederherstellung und
+Quellversions-Mindestanforderungen stehen in diesem2-Seiten-Leitfaden nicht.
+
+Was der neue Fund beantwortet:
+Ein konkreter dokumentierter USB-Updateweg fuer die abgebildete alte
+Fernbedienungsbauart und die LX0320-1.2/LX0920-Kombination existiert.
+Das ist ein eigenstaendiger Weg und kein Nachweis einer versteckten WLAN-
+Tastenkombination. Kein Beleg, dass Remote4.0 UPDATE BY APP freischaltet.
+Auch kein Beleg fuer eine zwingende4.0-Zwischenversion vor5.0 oder fuer
+den direkten Sprung der konkreten alten Fernbedienung3.0 auf4.0.
+
+Noch fehlende Dateien/Freigaben:
+Das Remote-.lnr-Paket ist in den bisher extrahierten4Service-App-Firmware-
+ressourcen NICHT enthalten. Bei gezielter oeffentlicher Suche nach exaktem
+Dateinamen, LX0620_ST und Versionskennung wurde keine passende Download-
+quelle gefunden. Der Leitfaden selbst enthaelt die Firmwarebinaerdateien
+nicht. Die bekannte5.0-.lnx ersetzt kein .lnr-Fernbedienungspaket.
+Das2024-.lnx-Beispiel ist4.0, waehrend unsere Service-App5.0 enthaelt; keine
+ungepruefte Mischung dieser Pakete oder behauptete5.0-USB-Freigabe ableiten.
+
+Fuer WLAN/EDK UPDATE bleibt das Ergebnis der Recherche begrenzt negativ:
+Keine belegte versteckte Tastenkombination oder alternative AP-Aktivierung
+fuer Remote3.0.220221a wurde gefunden. Allgemeine Wi-Fi-Einrichtung,
+PAIR-Zustand und Werksreset aelterer LX-WIFI-01-Module sind nicht mit dem
+Firmware-Updatemodus gleichzusetzen. Keine dieser Funktionen wurde am Ofen
+ausprobiert. Der naechste konkrete Hardwareabgleich waere eine Sichtpruefung
+des rueckseitigen USB-Anschlusses der Fernbedienung, ohne Stick einzustecken.
+
+Ergaenzende Recherchen:
+.local/research/update-ap-bulletin-search.txt
+.local/research/update-ap-remote-manual-search.txt
+.local/research/update-ap-web/bulletin-guide-link.json
+
+Nachtrag: Gezielte Beschaffung der Remote-.lnr4.0
+==============================================
+Auch die erweiterte Suche vom10.11.2026 lieferte keine passende Binaerdatei.
+Geprueft wurden unter anderem alle97Service-App-Ressourcen, oeffentliche
+Hersteller-/Haendlerseiten,19GitHub-Projekte mit Releases sowie Firmware-
+Issue-Kommentare. Der dokumentabgeleitete exakte Dateipfad am bekannten
+firmware.linx.it-Dienst liefert404. Archivabfragen waren teilweise wegen
+Timeout/HTTP504 nicht auswertbar; diese Grenzen sind keine Negativbeweise.
+Vollstaendiger Ergebnisbericht: docs/remote-firmware-search.txt.
+Konkrete Dateianfrage vorbereitet: docs/remote-firmware-request.txt.
+Keine Anfrage versendet und keine .lnr-Datei als vorhanden ausgegeben.
+
+Bedienfeld direkt am Ofen / Grenze der Fernbedienungsannahme
+==========================================================
+Der Benutzer weist auf eigene Tasten und ein LCD am Ofen hin. Das danach
+gelieferte HEIC-Foto wurde unveraendert gelesen und fuer die Anzeige als PNG
+dekodiert (.local/research/panel-identification/stove-panel-user.png).
+Sichtbar ist die zweitas­tige SAVE-/Notbedienpanel-Bauart: Flammensymbol links,
+Ein/Aus rechts, mittige Segmentanzeige, Status-LEDs. Diese Merkmale stimmen
+mit der Abbildung in942321,italienischeSeite50, ueberein; die exakte interne
+Platinenrevision ist aus dem Frontfoto nicht ablesbar. Fuer das SAVE PANEL
+dokumentiert die vorliegende942321-Anleitung,italienischeSeite50, die
+Grundfunktionen Ein/Aus, Leistung und Alarmquittierung, keinen WLAN-Update-
+Einstieg. Das beweist nicht die Abwesenheit eines nicht beschriebenen
+Servicezugangs auf der tatsaechlichen Panelrevision.
+
+Die Aussage "ohne Fernbedienung kein Updatemodus" ist NICHT belegt.
+Beim dokumentierten USB-Teil fuer Hauptplatine/Notpanel startet der Ablauf
+durch Wiederanlegen der Versorgung mit vorbereitetem Stick, ohne dass
+die Fernbedienung einen Aktivierungsbefehl senden muss. Der AIR-Leitfaden
+gibt zugleich zuerst das Fernbedienungsupdate vor; diese Paket-/Versions-
+Reihenfolge ist vom eigentlichen USB-Startmechanismus zu unterscheiden.
+Auch die gezielte Nachsuche fuer diese SAVE-PANEL-Bauart ergab keinen
+belegten Tastenweg in EDK UPDATE. Die dokumentierten Grundfunktionen allein
+beweisen nicht, dass kein undokumentierter Service-/Bootzugang existiert.
+Keine Tastenkombination oder Versorgungsschaltfolge wurde ausprobiert.
+Der Anschluss im Gehaeuseausschnitt neben dem Panel wurde anhand dieses
+Front-/Schraegfotos nicht als Update-Port elektrisch oder funktional verifiziert.
+
+Konkrete Anfrage an Edilkamin / technischen Kundendienst
+======================================================
+"Slide2 7 Up, The Mind, LX0320 1.2, EDK2020_MB 3.6.221008a,
+BOOT EDK2020_MB 2.0.211112a, LX0920 3.1.220613a, Datenbankkennung 3:
+Ist das Update mit Service 2.4.260529 ueber Entrambi auf LX0920 4.2 und
+EDK2020_MB 5.0.260213a direkt freigegeben? Welche Zwischenversionen,
+Parametersicherung/-migration und Wiederherstellung sind vorgeschrieben?"
+Diese Anfrage wurde vorbereitet, nicht versendet.
+
+Reproduzierbare technische Belege
+===============================
+Native virtuelle Adressen in obiger Bibliothek:
+- updateProcess 0x81c78c, 9956 Bytes; FWVERSION-Antwortsplit 0x81cc9c;
+  LX0320-2.0-Vergleich 0x81cdec, 1.2-Ressource ab 0x81ceb8.
+- Hauptplatine lokal waehlen 0x89ed5c, 396 Bytes; Anzeige 5.0.
+- LX0920-Panel lokal waehlen 0x89eee8; Vergleich 0x89ef38.
+- entrambiMqtt_clicked 0x8a3a88; AggiornaTutto setzen 0x8a3b14.
+- insertStatus 0x8a0d24; Panel-Erfolg 0x8a16e4..0x8a1738;
+  kombinierter Zweig 0x8a17d4; Board-URL 0x8a18c8ff;
+  verzogerter Publish 0x8a1efc und Lambda 0x8bd094.
+- Erwartete Erfolgstoken MB5.0.260213a, WP4.2.231211a, WD4.2.240112a.
+  Panel-Erfolgstoken und Paketnamen tragen unterschiedliche Tagesangaben;
+  hier wird deshalb nur die gemeinsame Panel-Zielversion 4.2 behauptet.
+- verifyCompatibility 0xaaa374 vergleicht Versionen und Datum. Alle zehn
+  gefundenen direkten Aufrufe liegen in updateControls bzw. der
+  OEM-Parameterseite und pruefen aktuelle Mainboard-Version gegen feste
+  Mindestversionen fuer UI-Funktionen. Kein direkter Aufruf im untersuchten
+  Updater; diese Routine erteilt keine Freigabe des Firmware-Upgrades.
+- writecsv 0x8787d8; reset_parametri 0x863674.
+
+Lokale Analyseartefakte (git-ignoriert):
+.local/research/firmware5-upgrade-path.txt
+.local/research/firmware5-parameters-compatibility.txt
+.local/research/firmware5-review/current-fetch.json
+.local/research/service-update-ui-instructions.json
+android_apk/analysis/service-2.4.260529/qrc-file-inventory.json
+android_apk/analysis/service-2.4.260529/rea-update-workflow-evidence.json
+
+REA/Hopper-Querpruefung gegen dasselbe ausgelieferte ELF:
+Hauptplatinen-Auswahl: ev_fe2a7cbb8c6d57d4e639c3314482059b5b60030e234bcc912231a46ea7c6f539
+Entrambi-Assembly: ev_bcaab07b5c8ae6e1095fb538fccded9de5d5d615c5c406fe1bae25f06cc16cc8
+Panel-Erfolg/Verkettung: ev_b84b11e4fd0c82335ed1e81b64d4f21dca3abb4754ad43bcbb4388b95cca2ce4
+Export: android_apk/analysis/service-2.4.260529/rea-firmware5-compatibility-evidence.json
+Hopper fasst teilweise Nachbarfunktionen zusammen; fuer Funktionsgrenzen
+wurden zusaetzlich die originalen ELF-Symbolgroessen und llvm-objdump benutzt.
+
+Oeffentliche Primaerquellen:
+https://play.google.com/store/apps/details?id=com.edilkamin.linx
+https://apps.apple.com/it/app/edilkamin-service/id6756316948
+https://www.edilkamin.com/it/centri-assistenza-tecnica

@@ -68,5 +68,30 @@ if validation_path.exists():
                 'tested_version': validation['version'],
                 'tested_firmware_sha256': validation['firmware_sha256'],
                 'not_tested': validation['not_tested']}
+# Preserve the narrower diagnostics evidence separately from the old fan test.
+# Its source inventory covers src/* only, not the complete build environment.
+diagnostics_path = root / 'docs/diagnostics-hardware-validation.json'
+if diagnostics_path.exists():
+    diagnostics = json.loads(diagnostics_path.read_text())
+    old_sources = {k: v for k, v in diagnostics.get('source_sha256', {}).items()
+                   if k.startswith('src/') and k != 'src/FirmwareVersion.h'}
+    current_sources = {k: v for k, v in metadata['source_sha256'].items()
+                       if k.startswith('src/') and k != 'src/FirmwareVersion.h'}
+    checks_passed = (diagnostics.get('host_tests', {}).get('status') == 'passed'
+                     and diagnostics.get('build') == 'passed'
+                     and diagnostics.get('usb_update', {}).get('esptool_hash_verified') is True
+                     and diagnostics.get('refresh_after_normal_ble_sleep', {}).get('passed') is True)
+    exact_binary = (diagnostics.get('version') == version
+                    and diagnostics.get('firmware_sha256') == metadata['files']['firmware.bin']['sha256'])
+    if checks_passed and old_sources and old_sources == current_sources:
+        metadata['diagnostics_validation'] = {
+            'status': 'exact_tested_binary' if exact_binary else 'version_only_source_match',
+            'source_scope': 'src/*; only src/FirmwareVersion.h may differ',
+            'date': diagnostics['date'],
+            'report': '../docs/diagnostics-hardware-validation.json',
+            'tested_version': diagnostics['version'],
+            'tested_firmware_sha256': diagnostics['firmware_sha256'],
+            'not_tested': diagnostics['not_tested']}
 (web / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
-print('Packaged', version, metadata['hardware_validation']['status'])
+print('Packaged', version, metadata['hardware_validation']['status'],
+      metadata.get('diagnostics_validation', {}).get('status', 'no matching diagnostics evidence'))

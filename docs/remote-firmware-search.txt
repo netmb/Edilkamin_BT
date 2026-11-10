@@ -1,0 +1,71 @@
+LX0620_ST-Fernbedienung: Suche nach USB-Firmware4.0
+Stand10.11.2026; Ergebnis: keine passende Binaerdatei gefunden/heruntergeladen.
+
+Gesuchte, im AIR-Leitfaden abgebildete Datei:
+RADIOCOMANDO_FIRMWARE_LX0620_ST_4_0_0000_230218_a_FR_EXEC.lnr
+Der Dateiname ist belegt; die eigentlichen Firmwarebytes liegen uns nicht vor.
+Deshalb gibt es keinen Datei-SHA256 und keine validierte USB-Updatevorbereitung.
+
+Begrenzte, konkret durchgefuehrte Pruefungen
+=========================================
+- Exakter Dateiname und Varianten LX0620_ST/LX0620/230218/.lnr sowie
+  The-Mind-AIR-USB-Pakete in mehreren Sprachen oeffentlich gesucht.
+- Bekannter Herstellerdienst, exakter dokumentabgeleiteter Dateiname unter
+  http://firmware.linx.it/Edilkamin/The_Mind/ : HTTP404.
+  Ein einzelner naheliegender, ausdruecklich GERATENER Alias radiocomando.bin
+  liefert ebenfalls404. Das belegt keine globale Abwesenheit auf dem Server.
+- Alle97Dateien aus den5Qt-Ressourcengruppen der Service-App2.4.260529
+  enumeriert: nur4bereits bekannte .lnx/.lnp-Firmwaredateien, keine .lnr.
+  APK-Mitgliedsnamen ebenfalls ohne passenden Firmwareeintrag.
+- Oeffentliche Hersteller-Downloadseite, funktionierendes Handbuchportal und
+  verlinkte Haendlerdokumentation ohne auffindbares Firmware-USB-Paket.
+-19oeffentliche Edilkamin-GitHub-Projekte, davon18vollstaendig lesbare
+  Default-Branch-Baeume und1leerer/nichtlesbarer Baum; Release-Anhaenge und
+  neun Firmware-Issue-Threads mit82Kommentaren: kein passendes Binaerpaket.
+  Das ist keine Suche aller GitHub-Codeinhalte oder aller historischen Commits.
+- GitLab-Projektsuche lieferte keine passenden Projekte. Archive.org lieferte
+  Handbuecher/Modellhalter, keine passende Firmwaredatei.
+- Ein Google-Drive-Firmwarearchiv auf einem gemischten Technikblog betraf
+  WORX-Landroid-Maehroboter, nicht Edilkamin, und wurde deshalb ausgeschlossen.
+
+Tatsaechliche Suchgrenzen
+========================
+Wayback-CDX-Abfrage: Zeitueberschreitung. Common-Crawl-Indizes Oktober2026 und
+Dezember2024: jeweils HTTP504. Diese Archivabfragen sind nicht erfolgreich
+abgeschlossene Negativsuchen. FTP-Verbindungsversuch zum Herstellerhost:
+Zeitueberschreitung, kein Login/Listing erfolgt. grep.app:HTTP429;
+GitHub-Connector verlangte erneute Anmeldung, daher oeffentliche REST-APIs
+verwendet. Keine Zugangsbegrenzung umgangen, kein Konto angelegt, keine
+Nachricht an andere gesendet, kein Programm aus fremden Downloads ausgefuehrt.
+Kein Ofen-/Fernbedienungs-/Bridge-Update oder sonstiger Geraeteschreibzugriff.
+
+Quellen und Belege
+=================
+Rundschreiben REVASS1/24 mit Link auf den2-seitigen AIR/HYDRO-Leitfaden:
+https://www.scribd.com/document/798552410/Edilkamin-Circulaire-REVASS-1-24-Mise-a-Jour-the-MIND-Version-4-2
+Oeffentlich verlinkter Leitfaden:
+https://drive.google.com/file/d/1YSpNvZXdDxO50-rwGMz5XHHQSJHye29z/view?usp=drive_link
+Hersteller-Downloadseite:
+https://edilkamin.com/en/area-download
+App-Support laut offiziellem Play-Store-Eintrag:
+https://play.google.com/store/apps/details?id=com.edilkamin.linx
+
+Detailberichte/Rohdaten (git-ignoriert):
+.local/research/remote-firmware-source-code-search.txt
+.local/research/remote-firmware-search/remote-firmware-manufacturer-search.txt
+.local/research/remote-firmware-search/all-service-qrc-inventory.json
+.local/research/remote-firmware-search/root-initial-source-checks.json
+.local/research/remote-firmware-search/additional-source-checks.json
+.local/research/remote-firmware-search/commoncrawl-index-checks.json
+.local/research/remote-firmware-search/repository-inventory.json
+.local/research/remote-firmware-search/issue-comments-inventory.json
+
+Naechster konkreter Beschaffungsweg
+==================================
+Gezielt die genannte .lnr-Datei oder das vollstaendige AIR-USB-Paket aus dem
+Rundschreiben bei Edilkamin/technischem Kundendienst anfordern. Die bereits
+vorhandene .lnx-Hauptplatinen- oder .lnp-Moduldatei ist kein Ersatz fuer .lnr.
+Eine versandfertige Anfrage steht in docs/remote-firmware-request.txt;
+sie wurde NICHT versendet. Freigabe3.0->4.0 und Hardwarezuordnung bleiben
+auch bei spaeterem Dateierhalt zu pruefen. Das2024-Paket belegt keine
+Freigabe des spaeteren Hauptplatinen-Upgrades auf5.0.

@@ -35,7 +35,8 @@ inline Response validate(const uint8_t *frame, size_t size,
       return Response::Invalid;
     dataSize = 3 + frame[2];
     result = Response::Read;
-  } else if (frame[1] == 6 && request[1] == 6) {
+  } else if ((frame[1] == 6 && request[1] == 6) ||
+             (frame[1] == 0x10 && request[1] == 0x10)) {
     if (size < 8 || memcmp(frame, request, 6) != 0)
       return Response::Invalid;
     dataSize = 6;

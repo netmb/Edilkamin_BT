@@ -92,7 +92,9 @@ public:
     SET_WRITE_NEW_TEMP,
     SET_WRITE_NEW_POWER,
     SET_CHANGE_AUTO_SWITCH,
-    SET_ON_OFF
+    SET_ON_OFF,
+    READ_DIAGNOSTIC,
+    ACKNOWLEDGE_ALARM
   };
 
   struct structDatagram {
@@ -308,12 +310,12 @@ public:
       "\"edilkamin/322707E4/automatic_mode/state\",\"retain\": true }";
 
   void aesEncrypt(char *plainText, byte *output);
-  void aesDecrypt(byte *cryptedText, byte *output);
+  bool aesDecrypt(const byte *cryptedText, byte *output, size_t length = 32);
   void getNtpTime(const char *ntpServer, long gmtOffset_sec);
   void getTimestamp(byte *ts);
   // void hexDebug(byte *data, size_t length, char *returnStr);
   void crc16modbus(byte *msg, size_t len, byte *crcOut);
-  void createBtPacket(byte *cmd, size_t len, byte *btPacket);
+  bool createBtPacket(byte *cmd, size_t len, byte *btPacket);
   void getBtContent(byte *rcvd, size_t len, structDatagram *d);
 };
 

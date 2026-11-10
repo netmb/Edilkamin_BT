@@ -16,6 +16,7 @@ Path(sys.argv[1]).write_text('\n'.join([
     section('FanControl fans;', 'void publishFanAvailability()'),
     section('void publishFanAvailability()', 'void publishFanDiscovery()'),
     section('void publishSensor(', 'void publishSensorDiscovery()'),
+    section('void publishAlarmAvailability()', 'void publishTemperature('),
     section('void publishTemperature(', 'void hexDebug('),
     section('bool queueBtCommand(', '// MQTT reconnect'),
 ]))

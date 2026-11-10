@@ -1,4 +1,5 @@
 #include "Helper.h"
+#include "BleFrame.h"
 #include "mbedtls/aes.h"
 #include "time.h"
 
@@ -66,15 +67,17 @@ void Helper::aesEncrypt(char *plainText, byte *output) {
   mbedtls_aes_free(&aes);
 }
 
-void Helper::aesDecrypt(byte *cryptedText, byte *output) {
+bool Helper::aesDecrypt(const byte *cryptedText, byte *output, size_t length) {
+  if (!cryptedText || !output || !BleFrame::encryptedSizeValid(length)) return false;
   byte decryptIv[] = {0xda, 0x1a, 0x55, 0x73, 0x49, 0xf2, 0x5c, 0x64,
                       0x1b, 0x1a, 0x21, 0xd2, 0x6f, 0x5b, 0x21, 0x8a};
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
   mbedtls_aes_setkey_dec(&aes, (const byte *)key, 128);
-  mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, 32, decryptIv,
-                        (const byte *)cryptedText, output);
+  const int result = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, length,
+                                        decryptIv, cryptedText, output);
   mbedtls_aes_free(&aes);
+  return result == 0;
 }
 
 void Helper::getNtpTime(const char *ntpServer, long gmtOffset_sec) {
@@ -127,17 +130,14 @@ void Helper::crc16modbus(byte *msg, size_t len, byte *crcOut) {
   crcOut[1] = crcHi;
 }
 
-void Helper::createBtPacket(byte *cmd, size_t len, byte *btPacket) {
+bool Helper::createBtPacket(byte *cmd, size_t len, byte *btPacket) {
   structDatagram d;
-  for (uint8_t i = 0; i < len; i++) {
-    d.payload[i] = cmd[i];
-  }
-  crc16modbus(d.payload, 6, d.checksum);
   getTimestamp(d.timestamp);
-  char dtemp[32];
-  memcpy(dtemp, &d, sizeof(d));
-  // hexDebug((byte*)dtemp, 32);
-  aesEncrypt(dtemp, btPacket);
+  byte plain[32];
+  if (!BleFrame::buildPlaintext(plain, reinterpret_cast<const byte *>(&d), cmd, len))
+    return false;
+  aesEncrypt(reinterpret_cast<char *>(plain), btPacket);
+  return true;
 }
 
 void Helper::getBtContent(byte *rcvd, size_t len, structDatagram *d) {

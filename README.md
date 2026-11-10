@@ -10,11 +10,16 @@ I wrote the code for my Slide2 7-UP pellet stove, but actually all stoves from E
 
 !! Webflash currenty only works with Wemos D1 Mini ESP32 !!
 
-The current web installer offers the final release **2026.10.29**. Its control
-implementation passed the cold function test on one single-fan stove on
-2026-10-29, including independent register readback and restoration. The final
-build changes only the version identifier relative to the tested build. Fan 2/3 hardware, combustion and long-duration stability remain
-untested. See [hardware validation](docs/hardware-validation.json).
+The web installer artifacts are packaged as **2026.11.10**, adding Bluetooth
+hardware/firmware diagnostics and manual alarm acknowledgment. The release
+source differs from the USB-tested **2026.11.10-diagnostics1** build only in
+its version identifier. That hardware check verified 23 diagnostic fields,
+manual refresh and refusal to acknowledge an alarm-free stove; successful
+acknowledgment of an active alarm remains untested. See the
+[diagnostics validation](docs/diagnostics-hardware-validation.json).
+The earlier single-fan control test is recorded separately in
+[hardware validation](docs/hardware-validation.json). Fan 2/3 hardware,
+combustion and long-duration stability remain untested.
 The web page provides one installation button, as before. The installer writes
 bootloader, partition table and application. With the existing partition layout,
 leave erase disabled to preserve WLAN/MQTT configuration. New devices require
@@ -161,11 +166,54 @@ are not automatically repeated. Read-modify-write is serialized by this bridge,
 but the protocol provides no atomic compare-and-swap against simultaneous changes
 from another controller.
 
-This extension uses only short reads/writes supported by the existing 32-byte
-transport. Channel setpoint controls (including the ambiguous channel-3 read),
-alarm history, statistics, weekly schedules and hydraulic sensors remain outside
-this change. The build itself never uploads firmware or performs a live stove test. The
+The 2026.10.29 extension uses short reads/writes. Channel setpoint controls
+(including the ambiguous channel-3 read), full alarm history, weekly schedules
+and hydraulic sensors remain outside this change. The build itself never
+uploads firmware or performs a live stove test. The
 separate single-fan cold test is documented in the hardware-validation report.
+
+## Hardware, firmware and service diagnostics
+
+Firmware **2026.11.10** adds read-only BLE diagnostics
+from the official The Mind / Edilkamin Service app protocol. It negotiates a
+larger BLE MTU and accepts bounded 32/48/64-byte encrypted replies, validating
+the expected function, data length and Modbus CRC. Identity reads return the
+full 16-byte device string, with the app's byte order restored. Hardware and
+stove firmware are distinct from `firmware_version/state`, which continues to
+identify the ESP32 bridge software.
+
+Home Assistant automatically discovers supported diagnostic fields after a
+valid reply: motherboard serial/name, bootloader and application versions;
+connection/local-interface/radio/control-panel names and versions; hardware
+revision and database code; raw operating phases/states and alarm data;
+logged alarm count, ignition count and operating hours at P1–P5 plus their sum.
+Empty or invalid optional text fields are not announced as installed devices.
+Diagnostics refresh after boot, every five minutes during a BLE connection,
+or using the **Diagnose aktualisieren** button. User controls take priority
+over the diagnostic pass. Failed/stale reads become unavailable.
+
+The manual **Alarm quittieren** button first reads operating state `0x02E5` and
+requires state 7, then reads the shared command word `0x031C`. It sets only
+reset bit 1 with a single FC16 write, preserving every other bit, including
+power. It subsequently reads state and alarm code; a write echo alone is not
+reported as a cleared alarm. If the power bit is on, acknowledgment is rejected
+as `Power command is on`; switch off separately first. No automatic ignition, retry, reset pulse or
+maintenance-counter reset is implemented. An already-set reset bit produces
+`Reset already set` without another write. Read the separate
+`alarm_reset_result/state` diagnostic for the result.
+
+Buttons publish non-retained `PRESS` messages to
+`edilkamin/322707E4/diagnostics/refresh` and
+`edilkamin/322707E4/alarm_reset/set`. Existing control topics are unchanged.
+Do not retain button commands in external MQTT clients. Firmware updating,
+calibration changes and service actuator tests are not exposed by this bridge.
+
+The checked protocol map and validation limits are in
+[BLE diagnostics](docs/ble-diagnostics.txt). The USB module passed read-only
+hardware checks with 23 populated diagnostic fields, 48-byte replies, manual
+refresh and rejection of acknowledgment on an alarm-free stove. See the
+[exact build validation](docs/diagnostics-hardware-validation.json); successful
+acknowledgment of an active alarm remains untested.
 
 ## Release packaging
 
@@ -180,7 +228,10 @@ table at `0x8000` and the application at `0x10000`, matching the original instal
 It leaves NVS/LittleFS unwritten unless erase is selected in the installation
 dialog. The separately generated `manifest-full.json` and merged image include
 OTA initialization and overwrite NVS; they are not used by the web page. `build-info.json` identifies source hashes,
-binary hashes and the validation scope for that exact firmware SHA-256. The firmware reports
+binary hashes and the validation scope for that firmware. The separate
+`diagnostics_validation` record distinguishes an exact tested binary from a
+version-only match of the tested `src/*` files; it does not assert that the
+new release binary was flashed or that active-alarm reset succeeded. The firmware reports
 its version over serial and `edilkamin/322707E4/firmware_version/state`.
 
 The Android app does not show the bridge's periodic 30s/120s BLE cooldown in the

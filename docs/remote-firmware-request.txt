@@ -1,0 +1,37 @@
+Entwurf, NICHT versendet.
+Empfaenger: daniele.baroni@edilkamin.com
+(App-Support laut offiziellem Google-Play-Eintrag Edilkamin Service)
+
+Betreff: The Mind / Slide2 7 Up – USB-Firmware LX0620_ST4.0 fuer Fernbedienung
+
+Guten Tag,
+
+ich besitze einen Edilkamin Slide2 7 Up mit The Mind. Die Handfernbedienung
+zeigt unter SOFTWARE / Remote control die Version3.0.220221a. Ein Eintrag
+AGGIORNAMENTO FW / UPDATE BY APP ist auch bei vollstaendigem OFF nicht sichtbar.
+
+Im AIR-Updateleitfaden zum Rundschreiben REVASS1/24 wird zuerst ein USB-Update
+der Handfernbedienung mit folgender Datei beschrieben:
+RADIOCOMANDO_FIRMWARE_LX0620_ST_4_0_0000_230218_a_FR_EXEC.lnr
+
+Bitte stellen Sie mir diese Datei oder das passende vollstaendige AIR-USB-
+Updatepaket ueber einen Herstellerdownload zur Verfuegung. Ist das direkte
+Update von meiner Fernbedienungsversion3.0.220221a damit freigegeben, und
+welche Hardwarekennung muss ich dafuer auf der Fernbedienung pruefen?
+Falls das Paket inzwischen ersetzt wurde, bitte ich um die aktuell passende
+Version mit der zugehoerigen Installationsanleitung.
+
+Der weitere Geraetestand lautet:
+- Hauptplatine LX0320 1.2, EDK2020_MB3.6.221008a
+- Bootloader BOOT EDK2020_MB2.0.211112a
+- Verbindungsmodul LX0920,3.1.220613a
+- Datenbankkennung3
+
+Bitte teilen Sie auch mit, ob fuer das Fernbedienungsupdate weitere zwingende
+Zwischenschritte oder gleichzeitig abzustimmende Modulversionen erforderlich
+sind und ob danach der lokale WLAN-Updatemodus verfuegbar ist.
+
+Der erwaehnte Leitfaden ist hier verlinkt:
+https://drive.google.com/file/d/1YSpNvZXdDxO50-rwGMz5XHHQSJHye29z/view?usp=drive_link
+
+Vielen Dank.

@@ -7,6 +7,10 @@
 #include "StoveProtocol.h"
 #include "SensorDiscovery.h"
 #include "FirmwareVersion.h"
+#include "Diagnostics.h"
+#include "DiagnosticDiscovery.h"
+#include "AlarmReset.h"
+#include "BleFrame.h"
 #include <LittleFS.h>
 #include <NimBLEDevice.h>
 #include <PubSubClient.h>
@@ -59,8 +63,8 @@ enum states {
 Helper h;
 uint8_t status = START;
 bool doBtConnect = true;
-bool btResponse = false;
-byte *btData;
+volatile bool btResponse = false;
+volatile bool bleRequestPending = false;
 bool btWriteRequest = false;
 static BLEUUID serviceUUID("abf0");
 static BLEUUID charUUIDWrite("abf1");
@@ -106,6 +110,23 @@ char sensorValues[SensorDiscovery::Count][32] = {};
 unsigned long sensorUpdated[SensorDiscovery::Count] = {};
 // Polls span several BLE windows; stale data must eventually become unavailable.
 const unsigned long sensorMaxAge = 10UL * 60 * 1000;
+AlarmReset::Transaction alarmReset;
+bool diagnosticDiscoveryDirty = true;
+bool diagnosticSeen[Diagnostics::Count] = {};
+bool diagnosticValid[Diagnostics::Count] = {};
+char diagnosticValues[Diagnostics::Count][24] = {};
+unsigned long diagnosticUpdated[Diagnostics::Count] = {};
+unsigned diagnosticNext = 0;
+int currentDiagnostic = -1;
+unsigned long diagnosticLastRefresh = 0;
+uint16_t bleMtu = 23;
+bool operatingStateKnown = false;
+uint8_t operatingState = 0xff;
+unsigned long operatingStateUpdated = 0;
+const char *alarmResetResult = "Idle";
+static byte lastBtPacket[32];
+static byte lastBtCommand[9];
+static size_t lastBtCommandLength = 6;
 
 struct btWriteMapping {
   Helper::btCmds name;
@@ -141,6 +162,7 @@ const queryLookup queryQueue[] = {
     {Helper::READ_FAN_23, h.readFan23},
     {Helper::READ_RELAX, h.readRelax},
     {Helper::READ_FIREPLACE_MAIN_STATUS, h.readFireplaceMainStatus},
+    {Helper::READ_FIREPLACE_STOVE_STATUS, h.readFireplaceStoveStatus},
     {Helper::READ_STANDBY_STATUS, h.readStandbyStatus},
     {Helper::READ_WARNING_FLAGS, h.readWarningFlags}};
 const size_t queryQueueElements = sizeof(queryQueue) / sizeof(queryQueue[0]);
@@ -243,6 +265,110 @@ void publishSensorDiscovery() {
   sensorDiscoveryDirty = !success;
 }
 
+void publishAlarmAvailability() {
+  const bool available = operatingStateKnown && operatingState == 7 &&
+      millis() - operatingStateUpdated < sensorMaxAge && !alarmReset.busy();
+  if (!mqttClient.publish("edilkamin/322707E4/alarm_reset/availability",
+                          available ? "ONLINE" : "OFFLINE", true))
+    diagnosticDiscoveryDirty = true;
+}
+
+void publishAlarmResult() {
+  switch (alarmReset.result()) {
+  case AlarmReset::Result::Pending: alarmResetResult = "Pending"; break;
+  case AlarmReset::Result::NotAlarm: alarmResetResult = "No active alarm"; break;
+  case AlarmReset::Result::AlreadySet: alarmResetResult = "Reset already set"; break;
+  case AlarmReset::Result::PowerOn: alarmResetResult = "Power command is on"; break;
+  case AlarmReset::Result::Cleared: alarmResetResult = "Alarm cleared"; break;
+  case AlarmReset::Result::StillActive: alarmResetResult = "Alarm active at verification"; break;
+  case AlarmReset::Result::Failed: alarmResetResult = "Request failed"; break;
+  }
+  if (!mqttClient.publish("edilkamin/322707E4/alarm_reset_result/state", alarmResetResult, true))
+    diagnosticDiscoveryDirty = true;
+  publishAlarmAvailability();
+}
+
+void invalidateDiagnostic(unsigned id) {
+  diagnosticValid[id] = false;
+  char topic[120];
+  DiagnosticDiscovery::topic(topic, sizeof(topic), id, "availability");
+  if (!mqttClient.publish(topic, "OFFLINE", true)) diagnosticDiscoveryDirty = true;
+}
+
+void publishDiagnostic(unsigned id, const char *value) {
+  if (!diagnosticSeen[id]) diagnosticDiscoveryDirty = true;
+  diagnosticSeen[id] = diagnosticValid[id] = true;
+  diagnosticUpdated[id] = millis();
+  snprintf(diagnosticValues[id], sizeof(diagnosticValues[id]), "%s", value);
+  char topic[120];
+  DiagnosticDiscovery::topic(topic, sizeof(topic), id, "state");
+  const bool sent = mqttClient.publish(topic, value, true);
+  DiagnosticDiscovery::topic(topic, sizeof(topic), id, "availability");
+  if (!mqttClient.publish(topic, sent ? "ONLINE" : "OFFLINE", true) || !sent)
+    diagnosticDiscoveryDirty = true;
+}
+
+void refreshDiagnostics() {
+  // A second press coalesces with the current pass; it cannot restart a read.
+  if (diagnosticNext >= Diagnostics::Count && currentDiagnostic < 0) {
+    diagnosticNext = 0;
+    diagnosticLastRefresh = millis();
+  }
+  doBtConnect = true;
+}
+
+void decodeDiagnostics(const byte *frame) {
+  const uint16_t reg = StoveProtocol::word(lastBtCommand + 2);
+  const uint16_t count = StoveProtocol::word(lastBtCommand + 4);
+  for (unsigned i = 0; i < Diagnostics::Count; ++i) {
+    const auto &field = Diagnostics::fields[i];
+    if (field.reg != reg || field.count != count) continue;
+    char value[24];
+    if (Diagnostics::decode(i, frame + 3, frame[2], value, sizeof(value)))
+      publishDiagnostic(i, value);
+    else
+      invalidateDiagnostic(i);
+  }
+  if (reg == 0x02e5 && count == 1) {
+    operatingState = frame[3];
+    operatingStateKnown = true;
+    operatingStateUpdated = millis();
+    publishAlarmAvailability();
+  }
+}
+
+void publishDiagnosticDiscovery() {
+  bool success = true;
+  char topic[120];
+  String payload;
+  JsonDocument config;
+  for (unsigned i = 0; i < Diagnostics::Count; ++i) {
+    if (diagnosticSeen[i]) {
+      DiagnosticDiscovery::build(config, i);
+      payload = ""; serializeJson(config, payload);
+      DiagnosticDiscovery::configTopic(topic, sizeof(topic), i);
+      success = mqttClient.publish(topic, payload.c_str(), true) && success;
+      DiagnosticDiscovery::topic(topic, sizeof(topic), i, "state");
+      success = mqttClient.publish(topic, diagnosticValues[i], true) && success;
+    }
+    DiagnosticDiscovery::topic(topic, sizeof(topic), i, "availability");
+    success = mqttClient.publish(topic, diagnosticValid[i] ? "ONLINE" : "OFFLINE", true) && success;
+  }
+  for (unsigned alarm = 0; alarm < 2; ++alarm) {
+    DiagnosticDiscovery::button(config, alarm != 0);
+    payload = ""; serializeJson(config, payload);
+    success = mqttClient.publish(alarm ?
+        "homeassistant/button/edilkamin_322707E4_alarm_reset/config" :
+        "homeassistant/button/edilkamin_322707E4_diagnostics_refresh/config", payload.c_str(), true) && success;
+  }
+  DiagnosticDiscovery::result(config);
+  payload = ""; serializeJson(config, payload);
+  success = mqttClient.publish("homeassistant/sensor/edilkamin_322707E4_alarm_reset_result/config", payload.c_str(), true) && success;
+  success = mqttClient.publish("edilkamin/322707E4/alarm_reset_result/state", alarmResetResult, true) && success;
+  diagnosticDiscoveryDirty = !success;
+  publishAlarmAvailability();
+}
+
 void publishTemperature(const char *topic, const byte *data) {
   char value[12];
   StoveProtocol::temperature(StoveProtocol::word(data), value, sizeof(value));
@@ -298,7 +424,8 @@ void nextQuery() {
 }
 
 bool writeQueueHasElements() {
-  if (fanRefreshStep < fanRefreshComplete || fans.pending() || controlTransaction.pending())
+  if (fanRefreshStep < fanRefreshComplete || fans.pending() || controlTransaction.pending() ||
+      alarmReset.busy() || diagnosticNext < Diagnostics::Count)
     return true;
   for (uint8_t i = 0; i < btWriteQueueLength; i++) {
     if (btWriteQueue[i].name != Helper::NO_CMD)
@@ -307,11 +434,24 @@ bool writeQueueHasElements() {
   return false;
 }
 
-static byte lastBtPacket[32];
-static byte lastBtCommand[6];
-
 void handleBtFailure() {
   controlTransaction.cancel();
+  if (alarmReset.busy()) {
+    alarmReset.fail();
+    publishAlarmResult();
+  }
+  if (lastBtCommand[1] == 3) {
+    const uint16_t reg = StoveProtocol::word(lastBtCommand + 2);
+    const uint16_t count = StoveProtocol::word(lastBtCommand + 4);
+    for (unsigned i = 0; i < Diagnostics::Count; ++i)
+      if (Diagnostics::fields[i].reg == reg && Diagnostics::fields[i].count == count)
+        invalidateDiagnostic(i);
+  }
+  currentDiagnostic = -1;
+  if (lastBtCommand[1] == 3 && StoveProtocol::word(lastBtCommand + 2) == 0x02e5) {
+    operatingStateKnown = false;
+    publishAlarmAvailability();
+  }
   if (currentOp == Helper::READ_ALARM) invalidateSensor(SensorDiscovery::Alarm);
   if (currentOp == Helper::READ_WARNING_FLAGS) {
     invalidateSensor(SensorDiscovery::Warnings);
@@ -340,9 +480,15 @@ void handleBtFailure() {
 }
 
 bool writeBtData() {
+  currentDiagnostic = -1;
+  lastBtCommandLength = 6;
   // Finish a confirmed prerequisite before any bootstrap or queued operation.
   bool selected = controlTransaction.take(lastBtCommand);
   if (selected) currentOp = transactionOp;
+  if (!selected && alarmReset.requestReady()) {
+    selected = alarmReset.take(lastBtCommand, lastBtCommandLength);
+    if (selected) currentOp = Helper::ACKNOWLEDGE_ALARM;
+  }
   while (fanRefreshStep < fanRefreshComplete && !selected) {
     const uint8_t step = fanRefreshStep++;
     if (step == 0) {
@@ -399,36 +545,66 @@ bool writeBtData() {
       debugln(F("Fan command cancelled: fresh settings unavailable or Relax active"));
     }
   }
+  while (!selected && diagnosticNext < Diagnostics::Count) {
+    const unsigned id = diagnosticNext++;
+    Diagnostics::request(lastBtCommand, id);
+    // The app negotiates a larger MTU for complete characteristic values.
+    // Never turn an unsupported long notification into a disconnect loop.
+    if (BleFrame::expectedResponseSize(lastBtCommand) + 3 > bleMtu) {
+      invalidateDiagnostic(id);
+      continue;
+    }
+    currentDiagnostic = static_cast<int>(id);
+    currentOp = Helper::READ_DIAGNOSTIC;
+    selected = true;
+  }
   if (!selected)
     return false;
   debug(F("-> Write cmd:"));
   debug(currentOp);
   debug(F(", data:"));
-  hexDebug(lastBtCommand, 6);
+  hexDebug(lastBtCommand, lastBtCommandLength);
   debugln();
-  h.createBtPacket(lastBtCommand, 6, lastBtPacket);
+  if (!h.createBtPacket(lastBtCommand, lastBtCommandLength, lastBtPacket)) {
+    handleBtFailure();
+    return false;
+  }
+  bleRequestPending = true;
   if (!pRemoteCharacteristicWrite->writeValue(lastBtPacket, 32)) {
+    bleRequestPending = false;
     handleBtFailure();
     pClient->disconnect();
     return false;
   }
   return true;
 }
-bool processBtResponseData(byte *btData) {
+bool processBtResponseData(byte *btData, size_t length = 32) {
+  debug(F("<- BLE frame bytes: "));
+  debugln(length);
   debug(F("<- Read, data:"));
   Helper::structDatagram d;
-  byte decrypted[32];
-  h.aesDecrypt(btData, decrypted);
+  byte decrypted[BleFrame::MaxSize];
+  if (!BleFrame::notificationSizeValid(length, lastBtCommand) ||
+      !h.aesDecrypt(btData, decrypted, length)) return false;
   const Modbus::Response response =
-      Modbus::validate(decrypted + 20, 12, lastBtCommand);
+      Modbus::validate(decrypted + 20, length - 20, lastBtCommand);
   if (response == Modbus::Response::Invalid) {
     debugln(F("Ignoring invalid/mismatched Modbus response"));
     return false;
   }
   if (response == Modbus::Response::Exception) {
+    bleRequestPending = false;
     debug(F("Modbus exception: "));
     debugln(decrypted[22]);
     handleBtFailure();
+    return true;
+  }
+  bleRequestPending = false;
+  if (response == Modbus::Response::Read) decodeDiagnostics(decrypted + 20);
+  currentDiagnostic = -1;
+  if (currentOp == Helper::ACKNOWLEDGE_ALARM) {
+    alarmReset.accept(decrypted + 20, length - 20);
+    publishAlarmResult();
     return true;
   }
   controlTransaction.acknowledge(decrypted + 20);
@@ -675,7 +851,15 @@ void mqttCallback(String topic, byte *message, unsigned int length) {
   byte btCmd[6];
   if (topic == "homeassistant/status") {
     if (msg == "online")
-      fanDiscoveryDirty = sensorDiscoveryDirty = true;
+      fanDiscoveryDirty = sensorDiscoveryDirty = diagnosticDiscoveryDirty = true;
+  } else if (topic == "edilkamin/322707E4/diagnostics/refresh") {
+    if (msg == "PRESS") refreshDiagnostics();
+  } else if (topic == "edilkamin/322707E4/alarm_reset/set") {
+    if (msg != "PRESS" || controlTransaction.pending() || alarmReset.busy()) return;
+    if (alarmReset.begin()) {
+      doBtConnect = true;
+      publishAlarmResult();
+    }
   } else if (topic == "edilkamin/322707E4/fan2_mode/set" ||
              topic == "edilkamin/322707E4/fan3_mode/set") {
     const byte fan = topic == "edilkamin/322707E4/fan2_mode/set" ? 2 : 3;
@@ -809,6 +993,9 @@ void mqttReconnect() {
     mqttClient.subscribe("edilkamin/322707E4/chrono_mode/set", true);
     mqttClient.subscribe("edilkamin/322707E4/standby/set", true);
     mqttClient.subscribe("edilkamin/322707E4/bluetooth/set", true);
+    mqttClient.subscribe("edilkamin/322707E4/diagnostics/refresh", 1);
+    mqttClient.subscribe("edilkamin/322707E4/alarm_reset/set", 1);
+    diagnosticDiscoveryDirty = true;
 
     debugln("Publishing Autodiscover Config to HA...");
     publishFanDiscovery();
@@ -842,15 +1029,21 @@ void mqttReconnect() {
   //}
 }
 
-static uint8_t btDataBuffer[32];
+static uint8_t btDataBuffer[BleFrame::MaxSize];
+static size_t btDataLength = 0;
+static portMUX_TYPE bleBufferMux = portMUX_INITIALIZER_UNLOCKED;
 
 static void bleNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic,
                               uint8_t *pData, size_t length, bool isNotify) {
-  if (length != sizeof(btDataBuffer))
+  if (!bleRequestPending || !BleFrame::notificationSizeValid(length, lastBtCommand))
     return;
-  memcpy(btDataBuffer, pData, sizeof(btDataBuffer));
-  btResponse = true;
-  btData = btDataBuffer;
+  portENTER_CRITICAL(&bleBufferMux);
+  if (!btResponse) {
+    memcpy(btDataBuffer, pData, length);
+    btDataLength = length;
+    btResponse = true;
+  }
+  portEXIT_CRITICAL(&bleBufferMux);
 }
 
 class MyClientCallback : public BLEClientCallbacks {
@@ -911,12 +1104,18 @@ bool connectToServer() {
   }
 
   bleConnected = true;
+  bleMtu = pClient->getMTU();
+  operatingStateKnown = false;
+  publishAlarmAvailability();
+  debug(F(" - Negotiated BLE MTU: "));
+  debugln(bleMtu);
   bleDisconnected = false;
   bleLastConnect = millis();
   fans.requireRefresh();
   fan1PowerFresh = false;
   fanRefreshStep = 0;
   btResponse = false;
+  bleRequestPending = false;
   status = CHECK_BT_WRITE_QUEUE;
   debugln(F("Publishing Online-state to HA..."));
   mqttClient.publish("edilkamin/322707E4/availability/state", "ONLINE", true);
@@ -1069,6 +1268,7 @@ void setup() {
   msLastMqttConnect = millis(); // Reset MQTT watchdog timer
   msLastBleConnect = millis();
   BLEDevice::init("");
+  BLEDevice::setMTU(300);
   BLEScan *pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setInterval(1349);
@@ -1081,12 +1281,22 @@ void loop() {
   currentMillis = millis();
   if (bleDisconnected) {
     bleDisconnected = false;
+    if (bleRequestPending) handleBtFailure();
     controlTransaction.cancel();
     fans.failWrite();
     fans.requireRefresh();
     fan1PowerFresh = false;
     fanRefreshStep = fanRefreshComplete;
     btResponse = false;
+    bleRequestPending = false;
+    if (alarmReset.busy()) {
+      alarmReset.fail();
+      publishAlarmResult();
+    }
+    if (currentDiagnostic >= 0) {
+      invalidateDiagnostic(static_cast<unsigned>(currentDiagnostic));
+      currentDiagnostic = -1;
+    }
     status = START;
   }
 
@@ -1125,6 +1335,18 @@ void loop() {
   for (unsigned i = 0; i < SensorDiscovery::Count; ++i)
     if (sensorValid[i] && currentMillis - sensorUpdated[i] >= sensorMaxAge)
       invalidateSensor(static_cast<SensorDiscovery::Id>(i));
+  for (unsigned i = 0; i < Diagnostics::Count; ++i)
+    if (diagnosticValid[i] && currentMillis - diagnosticUpdated[i] >= sensorMaxAge)
+      invalidateDiagnostic(i);
+  if (diagnosticNext >= Diagnostics::Count && bleConnected &&
+      currentMillis - diagnosticLastRefresh >= 5UL * 60 * 1000)
+    refreshDiagnostics();
+  if (operatingStateKnown && currentMillis - operatingStateUpdated >= sensorMaxAge) {
+    operatingStateKnown = false;
+    publishAlarmAvailability();
+  }
+  if (diagnosticDiscoveryDirty && mqttClient.connected())
+    publishDiagnosticDiscovery();
   if (sensorDiscoveryDirty && mqttClient.connected())
     publishSensorDiscovery();
 
@@ -1214,6 +1436,7 @@ void loop() {
       debug(F("Bluetooth Response Timeout for cmd "));
       debugln(currentOp);
       handleBtFailure();
+      bleRequestPending = false;
       // Read replies contain no register address. Reset the link before the
       // next request so a delayed reply cannot confirm a different shared read.
       // Writes are not blindly repeated after an uncertain acknowledgement.
@@ -1221,11 +1444,17 @@ void loop() {
       status = START;
     }
     break;
-  case PROCESSING_BT_RESPONSE:
+  case PROCESSING_BT_RESPONSE: {
+    byte response[BleFrame::MaxSize];
+    portENTER_CRITICAL(&bleBufferMux);
+    const size_t length = btDataLength;
+    memcpy(response, btDataBuffer, length);
     btResponse = false;
-    status = processBtResponseData(btData) ? DONE_PROCESSING_BT_RESPONSE
+    portEXIT_CRITICAL(&bleBufferMux);
+    status = processBtResponseData(response, length) ? DONE_PROCESSING_BT_RESPONSE
                                           : AWAIT_BT_RESPONSE;
     break;
+  }
   case DONE_PROCESSING_BT_RESPONSE:
     status = START;
     break;

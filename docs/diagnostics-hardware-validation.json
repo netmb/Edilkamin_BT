@@ -1,0 +1,114 @@
+{
+  "date": "2026-11-10",
+  "version": "2026.11.10-diagnostics1",
+  "firmware_sha256": "e77ea1c697fdf8914a8a4b279891e75a2ccc1127aff497b96175425ae3bdc927",
+  "firmware_bytes": 1248960,
+  "usb_update": {
+    "chip": "ESP32-D0WD-V3",
+    "full_4mb_backup_verified": true,
+    "application_offset": "0x10000",
+    "only_application_written": true,
+    "esptool_hash_verified": true,
+    "settings_and_partition_table_not_written": true
+  },
+  "host_tests": {
+    "suites": 9,
+    "status": "passed",
+    "sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "alarm_command_words_exhaustively_checked": 65536
+  },
+  "build": "passed",
+  "ble": {
+    "negotiated_mtu": 300,
+    "read_requests_observed": 78,
+    "function_codes_observed": [
+      "03"
+    ],
+    "long_48_byte_replies_observed": 30,
+    "protocol_errors_observed": []
+  },
+  "home_assistant_discovery": {
+    "supported_diagnostic_fields": 30,
+    "live_diagnostic_fields": 23,
+    "unavailable_identity_fields": [
+      "motherboard_serial",
+      "local_interface_name",
+      "local_interface_version",
+      "radio_module_name",
+      "radio_module_version",
+      "command_panel_name",
+      "command_panel_version"
+    ],
+    "new_buttons": [
+      "Diagnose aktualisieren",
+      "Alarm quittieren"
+    ],
+    "payloads_verified_on_broker": true,
+    "frontend_visual_verification": false
+  },
+  "observed_values": {
+    "motherboard_name": "LX0320 1.2",
+    "motherboard_bootloader": "BOOT EDK2020_MB",
+    "motherboard_bootloader_version": "2.0.211112a",
+    "motherboard_application": "EDK2020_MB",
+    "motherboard_application_version": "3.6.221008a",
+    "connection_module_name": "LX0920",
+    "connection_module_version": "3.1.220613a",
+    "motherboard_hardware_revision": "0.0",
+    "database_code": "3",
+    "operational_phase": "0",
+    "operational_subphase": "0",
+    "operational_detail": "0",
+    "operating_state": "1",
+    "operating_substate": "0",
+    "alarm_raw": "0",
+    "logged_alarm_count": "5",
+    "ignition_count": "251",
+    "working_hours_p1": "733",
+    "working_hours_p2": "235",
+    "working_hours_p3": "128",
+    "working_hours_p4": "0",
+    "working_hours_p5": "0",
+    "working_hours_total": "1096"
+  },
+  "refresh_after_normal_ble_sleep": {
+    "passed": true,
+    "seconds_to_refresh": 11.68,
+    "values": {
+      "motherboard_name": "LX0320 1.2",
+      "motherboard_application_version": "3.6.221008a",
+      "connection_module_version": "3.1.220613a",
+      "database_code": "3",
+      "ignition_count": "251",
+      "working_hours_total": "1096"
+    },
+    "homeassistant_status": null
+  },
+  "alarm_guard_live_result": "No active alarm",
+  "live_reset_write_sent": false,
+  "not_tested": [
+    "successful acknowledgment of an actual active alarm",
+    "power-on refusal on live hardware (covered by host tests)",
+    "stove firmware update",
+    "combustion, fan 2/3 hardware and long-duration stability"
+  ],
+  "source_sha256": {
+    "src/AlarmReset.h": "454274bc3a68081ac33b3de348304136073e60fe37985fc7296f95de57765c76",
+    "src/BleFrame.h": "64a1e28b5bb1687a05c488ceb46aa4dcbb07db29ac87f1e47bca22d8fb68e19e",
+    "src/DiagnosticDiscovery.h": "1e11bd674c4f26e14528bea66dda8df33183ef99a190f305303540e09aff380e",
+    "src/Diagnostics.h": "a6ea63f76592be6cae81df9a50a8e041a8f2c1bcd8d2659c8b8c327d83e7e84e",
+    "src/FanControl.h": "61bbeca5492fe9a831e7f4f7d8b4ec5445322dcf7dffc9c9993f5d7b7eec1854",
+    "src/FanDiscovery.h": "ea886ce2f4e0a8d45153f8d685e4b21171886766bd16352a63c216c79938c748",
+    "src/FirmwareVersion.h": "82fb7d22264a234b1753375f092d36c401c289cb66e82621e37b5ff7295931e7",
+    "src/Helper.cpp": "8efd2cc7532f86d245d34ceeb9ffb7e4a74f54266de3b327951ad3d27ad803a3",
+    "src/Helper.h": "f777d0d31746215a9fe8f24fae9a9eb6dffa4c38572220de4d2348a1189ded42",
+    "src/ModbusResponse.h": "7585a6dafb7dcf15aa0218454b03cc5b93736dfebe20760a3aa61dba9345bdff",
+    "src/SensorDiscovery.h": "f0bf6fb37c65082a69091527d5815391342d0ae2d0aaae7742e9b2f3a08d7234",
+    "src/StoveProtocol.h": "9fc012129f2c67c378d6f7147acc6e18ef58768a1d16343bfb899c24b4b7c8f7",
+    "src/main.cpp": "c6e81223b572d700b8ba07cfb9ab7210a64dd3dec652ee529447b8ddd21c5890"
+  },
+  "privacy": "Full flash backup, credentials, serial numbers and raw serial/MQTT captures stay Git-ignored under .local/."
+}

@@ -18,6 +18,12 @@ FLAGS=(-std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -Isrc)
 "$TEST_BUILD_DIR/stove-protocol"
 "$CXX" "${FLAGS[@]}" -I"$JSON_INCLUDE" tests/sensor_discovery_test.cpp -o "$TEST_BUILD_DIR/sensor-discovery"
 "$TEST_BUILD_DIR/sensor-discovery"
+for test in diagnostics alarm_reset ble_frame; do
+  "$CXX" "${FLAGS[@]}" "tests/${test}_test.cpp" -o "$TEST_BUILD_DIR/$test"
+  "$TEST_BUILD_DIR/$test"
+done
+"$CXX" "${FLAGS[@]}" -I"$JSON_INCLUDE" tests/diagnostic_discovery_test.cpp -o "$TEST_BUILD_DIR/diagnostic-discovery"
+"$TEST_BUILD_DIR/diagnostic-discovery"
 python3 tests/extract_firmware.py "$TEST_BUILD_DIR/firmware_under_test.inc"
 "$CXX" "${FLAGS[@]}" -Itests/stubs -I"$JSON_INCLUDE" -I"$TEST_BUILD_DIR" tests/firmware_flow_test.cpp -o "$TEST_BUILD_DIR/firmware-flow"
 "$TEST_BUILD_DIR/firmware-flow"
